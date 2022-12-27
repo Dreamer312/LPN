@@ -16,14 +16,15 @@ import matplotlib.pyplot as plt
 import copy
 import time
 import os
-from model import two_view_net, three_view_net
+from model import two_view_net, three_view_net, two_view_net_swin_infonce
 from random_erasing import RandomErasing
 from autoaugment import ImageNetPolicy, CIFAR10Policy
 import yaml
 import math
 from shutil import copyfile
+from wty_new_image_folder import CVUSA_Data
 from utils import update_average, get_model_list, load_network, save_network, make_weights_for_balanced_classes
-
+from tqdm import tqdm
 version =  torch.__version__
 #fp16
 try:
@@ -136,18 +137,26 @@ train_all = ''
 if opt.train_all:
      train_all = '_all'
 
-image_datasets = {}
-image_datasets['satellite'] = datasets.ImageFolder(os.path.join(data_dir, 'satellite'),
-                                          data_transforms['satellite'])
-image_datasets['street'] = datasets.ImageFolder(os.path.join(data_dir, 'street'),
-                                          data_transforms['train'])
+# image_datasets = {}
+# image_datasets['satellite'] = datasets.ImageFolder(os.path.join(data_dir, 'satellite'),
+#                                           data_transforms['satellite'])
+# image_datasets['street'] = datasets.ImageFolder(os.path.join(data_dir, 'street'),
+#                                           data_transforms['train'])
 
-dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.batchsize,
-                                             shuffle=True, num_workers=2, pin_memory=True) # 8 workers may work faster
-              for x in ['satellite', 'street']}
-dataset_sizes = {x: len(image_datasets[x]) for x in ['satellite', 'street']}
-class_names = image_datasets['street'].classes
-print(dataset_sizes)
+# dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.batchsize,
+#                                              shuffle=True, num_workers=2, pin_memory=True) # 8 workers may work faster
+#               for x in ['satellite', 'street']}
+# dataset_sizes = {x: len(image_datasets[x]) for x in ['satellite', 'street']}
+# class_names = image_datasets['street'].classes
+# print(dataset_sizes)
+
+
+# image_datasets = CVUSA_Data(data_dir, data_transforms['satellite'], data_transforms['train'])
+# class_names = image_datasets.classes
+# dataset_sizes = {'satellite': len(image_datasets)}
+# dataloaders = torch.utils.data.DataLoader(image_datasets, batch_size=opt.batchsize,
+#                                             shuffle=True, num_workers=9, pin_memory=True, drop_last=True)
+print(image_datasets.__len__())
 use_gpu = torch.cuda.is_available()
 
 ######################################################################
@@ -187,8 +196,9 @@ def train_model(model, model_test, criterion, optimizer, scheduler, num_epochs=2
 
     #best_model_wts = model.state_dict()
     #best_acc = 0.0
-    warm_up = 0.1 # We start from the 0.1*lrRate
-    warm_iteration = round(dataset_sizes['satellite']/opt.batchsize)*opt.warm_epoch # first 5 epoch
+    # warm_up = 0.1 # We start from the 0.1*lrRate
+    # warm_iteration = round(dataset_sizes['satellite']/opt.batchsize)*opt.warm_epoch # first 5 epoch
+    scaler = torch.cuda.amp.GradScaler()
 
     for epoch in range(num_epochs-start_epoch):
         epoch = epoch + start_epoch
@@ -208,88 +218,89 @@ def train_model(model, model_test, criterion, optimizer, scheduler, num_epochs=2
             running_corrects3 = 0.0
 #            iter_ = 0
             # Iterate over data.
-            for data,data2 in zip(dataloaders['satellite'], dataloaders['street']) :
-                # get the inputs
-#                iter_ = iter_+1
-#                print(iter_)
-                inputs, labels = data
-                inputs2, labels2 = data2
+#             for data,data2 in zip(dataloaders['satellite'], dataloaders['street']) :
+#                 # get the inputs
+# #                iter_ = iter_+1
+# #                print(iter_)
+#                 inputs, labels = data
+#                 inputs2, labels2 = data2
+#                 now_batch_size,c,h,w = inputs.shape
+#                 if now_batch_size<opt.batchsize: # skip the last batch
+#                     continue
+#                 if use_gpu:
+#                     inputs = Variable(inputs.cuda().detach())
+#                     inputs2 = Variable(inputs2.cuda().detach())
+#                     labels = Variable(labels.cuda().detach())
+#                     labels2 = Variable(labels2.cuda().detach())
+#                 else:
+#                     inputs, labels = Variable(inputs), Variable(labels)
+                    
+            for data in tqdm(dataloaders):
+
+                street_data, sate_data,  all_label = data
+                inputs = sate_data.cuda(non_blocking=True)
+                inputs2 = street_data.cuda(non_blocking=True)
+                all_label = all_label.cuda(non_blocking=True)
                 now_batch_size,c,h,w = inputs.shape
-                if now_batch_size<opt.batchsize: # skip the last batch
-                    continue
-                if use_gpu:
-                    inputs = Variable(inputs.cuda().detach())
-                    inputs2 = Variable(inputs2.cuda().detach())
-                    labels = Variable(labels.cuda().detach())
-                    labels2 = Variable(labels2.cuda().detach())
-                else:
-                    inputs, labels = Variable(inputs), Variable(labels)
- 
                 # zero the parameter gradients
                 optimizer.zero_grad()
 
                 # forward
-                if phase == 'val':
-                    with torch.no_grad():
-                        outputs, outputs2 = model(inputs, inputs2)
-                else:
-                    if opt.views == 2: 
-                        outputs, outputs2 = model(inputs, inputs2)
-                    elif opt.views == 3: 
-                        if opt.extra_Google:
-                            outputs, outputs2, outputs3, outputs4 = model(inputs, inputs2, inputs3, inputs4)
-                        else:
-                            outputs, outputs2, outputs3 = model(inputs, inputs2, inputs3)
-
-                if not opt.LPN:            
-                    _, preds = torch.max(outputs.data, 1)
-                    _, preds2 = torch.max(outputs2.data, 1)
-                    
-                    if opt.views == 2:
-                        loss = criterion(outputs, labels) + criterion(outputs2, labels2)
-                    elif opt.views == 3:
-                        _, preds3 = torch.max(outputs3.data, 1)
-                        loss = criterion(outputs, labels) + criterion(outputs2, labels2) + criterion(outputs3, labels3)
-                        if opt.extra_Google:
-                            loss += criterion(outputs4, labels4)
-                else:
-                    preds, loss = one_LPN_output(outputs, labels, criterion, opt.block)
-                    preds2, loss2 = one_LPN_output(outputs2, labels2, criterion, opt.block)
-
-                    if opt.views == 2:       
-                        loss = loss + loss2
-                    elif opt.views == 3:
-                        preds3, loss3 = one_LPN_output(outputs3, labels3, criterion, opt.block)
-                        loss = loss + loss2 + loss3 
-                        if opt.extra_Google:
-                            _, loss4 = one_LPN_output(outputs4, labels4, criterion, opt.block)
-                            loss = loss + loss4
-                # backward + optimize only if in training phase
-                if epoch<opt.warm_epoch and phase == 'train': 
-                    warm_up = min(1.0, warm_up + 0.9 / warm_iteration)
-                    loss *= warm_up
-
-                if phase == 'train':
-                    if fp16: # we use optimier to backward loss
-                        with amp.scale_loss(loss, optimizer) as scaled_loss:
-                            scaled_loss.backward()
+                with torch.cuda.amp.autocast():
+                    if phase == 'val':
+                        with torch.no_grad():
+                            outputs, outputs2 = model(inputs, inputs2)
                     else:
-                        loss.backward()
-                    optimizer.step()
-#                    print("learning rate is ", optimizer.param_groups[0]["lr"])
-              #      scheduler.step()
-#                    print("learning rate is ", optimizer.param_groups[0]["lr"])
-                    ##########
-                    if opt.moving_avg<1.0:
-                        update_average(model_test, model, opt.moving_avg)
+                        if opt.views == 2: 
+                            result = model(inputs, inputs2)
+                            outputs, outputs2 = result['part_logits']
+                        elif opt.views == 3: 
+                            if opt.extra_Google:
+                                outputs, outputs2, outputs3, outputs4 = model(inputs, inputs2, inputs3, inputs4)
+                            else:
+                                outputs, outputs2, outputs3 = model(inputs, inputs2, inputs3)
+
+                    if not opt.LPN:            
+                        _, preds = torch.max(outputs.data, 1)
+                        _, preds2 = torch.max(outputs2.data, 1)
+                        
+                        if opt.views == 2:
+                            loss = criterion(outputs, labels) + criterion(outputs2, labels2)
+                        elif opt.views == 3:
+                            _, preds3 = torch.max(outputs3.data, 1)
+                            loss = criterion(outputs, labels) + criterion(outputs2, labels2) + criterion(outputs3, labels3)
+                            if opt.extra_Google:
+                                loss += criterion(outputs4, labels4)
+                    else:
+                        preds, loss = one_LPN_output(outputs, all_label, criterion, opt.block)
+                        preds2, loss2 = one_LPN_output(outputs2, all_label, criterion, opt.block)
+
+                        if opt.views == 2:       
+                            loss = loss + loss2
+                        elif opt.views == 3:
+                            preds3, loss3 = one_LPN_output(outputs3, labels3, criterion, opt.block)
+                            loss = loss + loss2 + loss3 
+                            if opt.extra_Google:
+                                _, loss4 = one_LPN_output(outputs4, labels4, criterion, opt.block)
+                                loss = loss + loss4
+                # backward + optimize only if in training phase
+                # if epoch<opt.warm_epoch and phase == 'train': 
+                #     warm_up = min(1.0, warm_up + 0.9 / warm_iteration)
+                #     loss *= warm_up
+
+
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+
 
                 # statistics
                 if int(version[0])>0 or int(version[2]) > 3: # for the new version like 0.4.0, 0.5.0 and 1.0.0
                     running_loss += loss.item() * now_batch_size
                 else :  # for the old version like 0.3.0 and 0.3.1
                     running_loss += loss.data[0] * now_batch_size
-                running_corrects += float(torch.sum(preds == labels.data))
-                running_corrects2 += float(torch.sum(preds2 == labels2.data))
+                running_corrects += float(torch.sum(preds == all_label.data))
+                running_corrects2 += float(torch.sum(preds2 == all_label.data))
                 if opt.views == 3:
                     running_corrects3 += float(torch.sum(preds3 == labels3.data))
 
@@ -356,7 +367,13 @@ def draw_curve(current_epoch):
 
 if opt.views == 2:
     if opt.LPN:
-        model = two_view_net(len(class_names), droprate = opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16=opt.use_vgg16, LPN = True, block=opt.block)
+        #model = two_view_net(len(class_names), droprate = opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16=opt.use_vgg16, LPN = True, block=opt.block)
+        #model = two_view_net_swin(len(class_names), droprate = opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16=opt.use_vgg16, LPN = True, block=opt.block)
+        model = two_view_net_swin_infonce(len(class_names), 
+                                          droprate=opt.droprate, 
+                                          stride=opt.stride, 
+                                          pool=opt.pool,
+                                          LPN=True, block=opt.block)
     else:
         model = two_view_net(len(class_names), droprate = opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16=opt.use_vgg16)
 elif opt.views == 3:

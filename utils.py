@@ -3,7 +3,7 @@ import torch
 import yaml
 import torch.nn as nn
 import parser
-from model import ft_net, two_view_net, three_view_net
+from model import ft_net, two_view_net, three_view_net, two_view_net_swin, two_view_net_swin_infonce, two_view_net_swinB_infonce
 
 def make_weights_for_balanced_classes(images, nclasses):
     count = [0] * nclasses
@@ -60,7 +60,7 @@ def load_network(name, opt):
        epoch = int(epoch)
     config_path = os.path.join(dirname,'opts.yaml')
     with open(config_path, 'r') as stream:
-        config = yaml.load(stream)
+        config = yaml.safe_load(stream)
 
     opt.name = config['name']
     opt.data_dir = config['data_dir']
@@ -72,7 +72,8 @@ def load_network(name, opt):
     opt.w = config['w']
     opt.share = config['share']
     opt.stride = config['stride']
-    opt.LPN = config['LPN']
+    # opt.LPN = config['LPN']
+    opt.LPN = True
 
     if 'pool' in config:
         opt.pool = config['pool']
@@ -94,13 +95,13 @@ def load_network(name, opt):
     # if opt.LPN:
     #     model = LPN(opt.nclasses)
 
-    if opt.views == 2:
-        model = two_view_net(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share)
-    elif opt.views == 3:
-        if opt.LPN:
-            model = three_view_net(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, LPN=True, block=opt.block)
-        else:
-            model = three_view_net(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share)
+    # if opt.views == 2:
+    #     model = two_view_net_swin(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share)
+    # elif opt.views == 3:
+    #     if opt.LPN:
+    #         model = three_view_net(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, LPN=True, block=opt.block)
+    #     else:
+    #         model = three_view_net(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share)
 
     if 'use_vgg16' in config:
         opt.use_vgg16 = config['use_vgg16']
@@ -111,7 +112,8 @@ def load_network(name, opt):
         elif opt.views == 3:
             model = three_view_net(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16 = opt.use_vgg16)
 
-
+    #model = two_view_net_swin(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16 = opt.use_vgg16, LPN = True, block=opt.block)
+    model = two_view_net_swin_infonce(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, LPN = True, block=opt.block)
     # load model
     if isinstance(epoch, int):
         save_filename = 'net_%03d.pth'% epoch

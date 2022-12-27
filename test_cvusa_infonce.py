@@ -54,10 +54,11 @@ with open(config_path, 'r') as stream:
 opt.fp16 = config['fp16'] 
 opt.use_dense = config['use_dense']
 opt.use_NAS = config['use_NAS']
-opt.use_vgg16 = config['use_vgg16']
+# opt.use_vgg16 = config['use_vgg16']
 opt.stride = config['stride']
 opt.views = config['views']
-opt.LPN = config['LPN']
+# opt.LPN = config['LPN']
+opt.LPN = True
 opt.block = config['block']
 
 if 'h' in config:
@@ -161,8 +162,7 @@ def extract_feature(model,dataloaders, view_index = 1, dim=512):
         if opt.LPN:
             # ff = torch.FloatTensor(n,2048,6).zero_().cuda()
             ff = torch.FloatTensor(n,dim,opt.block).zero_().cuda()
-            if opt.use_vgg16:
-                ff = torch.FloatTensor(n,512,opt.block).zero_().cuda()
+           
         for i in range(2):
             if(i==1):
                 img = fliplr(img)
@@ -173,16 +173,13 @@ def extract_feature(model,dataloaders, view_index = 1, dim=512):
                     input_img = nn.functional.interpolate(input_img, scale_factor=scale, mode='bilinear', align_corners=False)
                 if opt.views ==2:
                     if view_index == 1:
-                        outputs, _ = model(input_img, None) 
+                        result1 = model(input_img, None) 
+                        outputs, _ = result1['part_logits']
+
                     elif view_index ==2:
-                        _, outputs = model(None, input_img) 
-                elif opt.views ==3:
-                    if view_index == 1:
-                        outputs, _, _ = model(input_img, None, None)
-                    elif view_index ==2:
-                        _, outputs, _ = model(None, input_img, None)
-                    elif view_index ==3:
-                        _, _, outputs = model(None, None, input_img)
+                        result2 = model(None, input_img) 
+                        _, outputs = result2['part_logits']
+
                 ff += outputs
         # norm feature
         if opt.LPN:
@@ -224,7 +221,7 @@ if opt.LPN:
 else:
     model.classifier.classifier = nn.Sequential()
 model = model.eval()
-print(model)
+# print(model)
 if use_gpu:
     model = model.cuda()
 

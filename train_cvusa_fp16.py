@@ -16,13 +16,16 @@ import matplotlib.pyplot as plt
 import copy
 import time
 import os
-from model import two_view_net, three_view_net
+from model import two_view_net, three_view_net, two_view_net_swin
 from random_erasing import RandomErasing
 from autoaugment import ImageNetPolicy, CIFAR10Policy
 import yaml
 import math
 from shutil import copyfile
 from utils import update_average, get_model_list, load_network, save_network, make_weights_for_balanced_classes
+
+import wandb
+wandb.init(project="university", entity="dreamer0312")
 
 version =  torch.__version__
 #fp16
@@ -143,7 +146,7 @@ image_datasets['street'] = datasets.ImageFolder(os.path.join(data_dir, 'street')
                                           data_transforms['train'])
 
 dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.batchsize,
-                                             shuffle=True, num_workers=2, pin_memory=True) # 8 workers may work faster
+                                             shuffle=True, num_workers=12, pin_memory=True) # 8 workers may work faster
               for x in ['satellite', 'street']}
 dataset_sizes = {x: len(image_datasets[x]) for x in ['satellite', 'street']}
 class_names = image_datasets['street'].classes
@@ -189,6 +192,7 @@ def train_model(model, model_test, criterion, optimizer, scheduler, num_epochs=2
     #best_acc = 0.0
     warm_up = 0.1 # We start from the 0.1*lrRate
     warm_iteration = round(dataset_sizes['satellite']/opt.batchsize)*opt.warm_epoch # first 5 epoch
+    scaler = torch.cuda.amp.GradScaler()
 
     for epoch in range(num_epochs-start_epoch):
         epoch = epoch + start_epoch
@@ -229,59 +233,52 @@ def train_model(model, model_test, criterion, optimizer, scheduler, num_epochs=2
                 optimizer.zero_grad()
 
                 # forward
-                if phase == 'val':
-                    with torch.no_grad():
-                        outputs, outputs2 = model(inputs, inputs2)
-                else:
-                    if opt.views == 2: 
-                        outputs, outputs2 = model(inputs, inputs2)
-                    elif opt.views == 3: 
-                        if opt.extra_Google:
-                            outputs, outputs2, outputs3, outputs4 = model(inputs, inputs2, inputs3, inputs4)
-                        else:
-                            outputs, outputs2, outputs3 = model(inputs, inputs2, inputs3)
+                with torch.cuda.amp.autocast():
+                    if phase == 'val':
+                        with torch.no_grad():
+                            outputs, outputs2 = model(inputs, inputs2)
+                    else:
+                        if opt.views == 2: 
+                            outputs, outputs2 = model(inputs, inputs2)
+                        elif opt.views == 3: 
+                            if opt.extra_Google:
+                                outputs, outputs2, outputs3, outputs4 = model(inputs, inputs2, inputs3, inputs4)
+                            else:
+                                outputs, outputs2, outputs3 = model(inputs, inputs2, inputs3)
 
-                if not opt.LPN:            
-                    _, preds = torch.max(outputs.data, 1)
-                    _, preds2 = torch.max(outputs2.data, 1)
-                    
-                    if opt.views == 2:
-                        loss = criterion(outputs, labels) + criterion(outputs2, labels2)
-                    elif opt.views == 3:
-                        _, preds3 = torch.max(outputs3.data, 1)
-                        loss = criterion(outputs, labels) + criterion(outputs2, labels2) + criterion(outputs3, labels3)
-                        if opt.extra_Google:
-                            loss += criterion(outputs4, labels4)
-                else:
-                    preds, loss = one_LPN_output(outputs, labels, criterion, opt.block)
-                    preds2, loss2 = one_LPN_output(outputs2, labels2, criterion, opt.block)
+                    if not opt.LPN:            
+                        _, preds = torch.max(outputs.data, 1)
+                        _, preds2 = torch.max(outputs2.data, 1)
+                        
+                        if opt.views == 2:
+                            loss = criterion(outputs, labels) + criterion(outputs2, labels2)
+                        elif opt.views == 3:
+                            _, preds3 = torch.max(outputs3.data, 1)
+                            loss = criterion(outputs, labels) + criterion(outputs2, labels2) + criterion(outputs3, labels3)
+                            if opt.extra_Google:
+                                loss += criterion(outputs4, labels4)
+                    else:
+                        preds, loss = one_LPN_output(outputs, labels, criterion, opt.block)
+                        preds2, loss2 = one_LPN_output(outputs2, labels2, criterion, opt.block)
 
-                    if opt.views == 2:       
-                        loss = loss + loss2
-                    elif opt.views == 3:
-                        preds3, loss3 = one_LPN_output(outputs3, labels3, criterion, opt.block)
-                        loss = loss + loss2 + loss3 
-                        if opt.extra_Google:
-                            _, loss4 = one_LPN_output(outputs4, labels4, criterion, opt.block)
-                            loss = loss + loss4
+                        if opt.views == 2:       
+                            loss = loss + loss2
+                        elif opt.views == 3:
+                            preds3, loss3 = one_LPN_output(outputs3, labels3, criterion, opt.block)
+                            loss = loss + loss2 + loss3 
+                            if opt.extra_Google:
+                                _, loss4 = one_LPN_output(outputs4, labels4, criterion, opt.block)
+                                loss = loss + loss4
                 # backward + optimize only if in training phase
                 if epoch<opt.warm_epoch and phase == 'train': 
                     warm_up = min(1.0, warm_up + 0.9 / warm_iteration)
                     loss *= warm_up
 
-                if phase == 'train':
-                    if fp16: # we use optimier to backward loss
-                        with amp.scale_loss(loss, optimizer) as scaled_loss:
-                            scaled_loss.backward()
-                    else:
-                        loss.backward()
-                    optimizer.step()
-#                    print("learning rate is ", optimizer.param_groups[0]["lr"])
-              #      scheduler.step()
-#                    print("learning rate is ", optimizer.param_groups[0]["lr"])
-                    ##########
-                    if opt.moving_avg<1.0:
-                        update_average(model_test, model, opt.moving_avg)
+                wandb.log({"step loss": loss})
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+
 
                 # statistics
                 if int(version[0])>0 or int(version[2]) > 3: # for the new version like 0.4.0, 0.5.0 and 1.0.0
@@ -294,6 +291,7 @@ def train_model(model, model_test, criterion, optimizer, scheduler, num_epochs=2
                     running_corrects3 += float(torch.sum(preds3 == labels3.data))
 
             epoch_loss = running_loss / dataset_sizes['satellite']
+            wandb.log({"epoch_loss": epoch_loss})
             epoch_acc = running_corrects / dataset_sizes['satellite']
             epoch_acc2 = running_corrects2 / dataset_sizes['satellite']
             
@@ -357,6 +355,7 @@ def draw_curve(current_epoch):
 if opt.views == 2:
     if opt.LPN:
         model = two_view_net(len(class_names), droprate = opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16=opt.use_vgg16, LPN = True, block=opt.block)
+        #model = two_view_net_swin(len(class_names), droprate = opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16=opt.use_vgg16, LPN = True, block=opt.block)
     else:
         model = two_view_net(len(class_names), droprate = opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16=opt.use_vgg16)
 elif opt.views == 3:
@@ -435,7 +434,7 @@ if opt.moving_avg<1.0:
     num_epochs = 140
 else:
     model_test = None
-    num_epochs = 100
+    num_epochs = 120
 
 model = train_model(model, model_test, criterion, optimizer_ft, exp_lr_scheduler,
                        num_epochs=num_epochs)
