@@ -274,25 +274,25 @@
 
 
 
-#189
+#191
 # # # #########################################################################
-#  python train_cvusa_fp16_infonce.py \
-#  --name='189-3090-swint-infonce-lpn' \
-#  --data_dir='../CVUSA_ori/train' \
-#  --erasing_p=0.5 \
-#  --block=12 \
-#  --droprate=0.75 \
-#  --h=256 \
-#  --w=256 \
-#  --lr=0.04 \
-#  --optimizer='SGD' \
-#  --batchsize=32 \
-#  --gpu_ids='0'
+ python train_cvusa_fp16_infonce_plpn.py \
+ --name='191-3090-swint-infonce-lpn' \
+ --data_dir='../CVUSA_ori/train' \
+ --erasing_p=0.5 \
+ --block=12 \
+ --droprate=0.75 \
+ --h=256 \
+ --w=256 \
+ --lr=0.04 \
+ --optimizer='SGD' \
+ --batchsize=32 \
+ --gpu_ids='0'
 
 
 
  python test_cvusa_infonce.py \
---name='189-3090-swint-infonce-lpn' \
+--name='191-3090-swint-infonce-lpn' \
 --test_dir='../CVUSA_ori/val' \
 --gpu_ids='0' \
 #  # #########################################################################

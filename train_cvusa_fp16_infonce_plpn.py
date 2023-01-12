@@ -8,7 +8,7 @@ from torchvision import datasets, transforms
 import time
 import os
 # os.environ['CUDA_LAUNCH_BLOCKING']='1'
-from model import two_view_net_swinB_infonce, two_view_net_swin_infonce
+from model import two_view_net_swin_infonce_plpn
 from utils import update_average, load_network, save_network
 import wandb
 from types import SimpleNamespace
@@ -141,7 +141,7 @@ def train_model(opt):
     print(f'there are {len(class_names)} IDs')
 
     # ============ building networks ... ============
-    model = two_view_net_swin_infonce(len(class_names), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
+    model = two_view_net_swin_infonce_plpn(len(class_names), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
                                       LPN=True, block=opt.block)
 
     accuracy = Accuracy(num_classes=len(class_names)).cuda()

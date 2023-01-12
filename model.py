@@ -1283,7 +1283,6 @@ class Plpn_layer(nn.Module):
         
         # query_embed 复制bs分   4 bs c
         query_embed = self.region_embed.weight.unsqueeze(1).repeat(1, bs, 1)
-     
         x = lpn_query + query_embed.transpose(1, 0)
         x = x + self.pos_embed
         
@@ -1348,6 +1347,8 @@ class two_view_net_swin_infonce_plpn(nn.Module):
         resblock4_street.load_state_dict(part_weight, strict=False)
         resblock4_sate.load_state_dict(part_weight, strict=False)
         
+        self.plpn = Plpn_layer(self.feature_dim, layer_depth=4, num_heads=12, part_num = self.block)
+        
         self.part_stage4_sate = ft_net_cvusa_LPN_R_swin_stage4(class_num, model=None, stride=stride, pool=pool, block=block)
         self.part_stage4_street = ft_net_cvusa_LPN_swin_stage4(class_num, model=None,stride = stride, pool = pool, block=block, row = self.sqr)
             
@@ -1378,12 +1379,17 @@ class two_view_net_swin_infonce_plpn(nn.Module):
                 x1_stage3 = self.upsample_layer(x1_stage3)
                 x1_stage3 = self.channel_adapter1(x1_stage3)   
                 x1_stage3_concat = torch.concat((x1_stage3, x1_stage3_before_dsample), dim=1)
+
                 #print(x1_stage3_concat.size())
                 #torch.Size([60, 768, 4])
                 #x1_stage3_concat = x1_stage3
                 #print(f'x1_stage3_concat {x1_stage3_concat.size()}')
                 y1_s4_part = self.part_stage4_sate(x1_stage3_concat)
-                y1_s4_part_logits = self.part_classifier(y1_s4_part)
+                y1_s4_part = y1_s4_part.transpose(2,1)
+                B,C,H,W = x1_stage3_concat.size()
+                x1_stage3_concat = x1_stage3_concat.reshape(B,C,-1).transpose(2,1)
+                y1_s4_part = self.plpn(y1_s4_part, x1_stage3_concat)
+                y1_s4_part_logits = self.part_classifier(y1_s4_part.transpose(2,1))
 
 
             if x2 is None:
@@ -1404,9 +1410,14 @@ class two_view_net_swin_infonce_plpn(nn.Module):
                 x2_stage3 = self.upsample_layer(x2_stage3)
                 x2_stage3 = self.channel_adapter2(x2_stage3)   
                 x2_stage3_concat = torch.concat((x2_stage3, x2_stage3_before_dsample), dim=1)
+                
                 #x2_stage3_concat = x2_stage3
                 y2_s4_part = self.part_stage4_street(x2_stage3_concat)
-                y2_s4_part_logits = self.part_classifier(y2_s4_part)
+                B,C,H,W = x2_stage3_concat.size()
+                x2_stage3_concat = x2_stage3_concat.reshape(B,C,-1).transpose(2,1)
+                y2_s4_part = y2_s4_part.transpose(2,1)
+                y2_s4_part = self.plpn(y2_s4_part, x2_stage3_concat)                
+                y2_s4_part_logits = self.part_classifier(y2_s4_part.transpose(2,1))
                 
             result = {'global_logits': (y1_global_logits, y2_global_logits),
                       'global_embedding':(y1_embedding, y2_embedding),
