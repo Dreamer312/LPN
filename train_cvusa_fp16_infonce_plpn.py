@@ -486,7 +486,8 @@ def train_one_epoch(model, epoch, criterion_class, infonce, optimizer, accuracy,
 
             # print(f'loss_global')
             # assert(0)
-            loss_main = loss_main + loss_global
+            #loss_main = loss_main + loss_global
+            loss_main = torch.tensor([0.]).cuda()
             
             ################################
             sate_embd, street_embd= result['global_embedding']
@@ -494,7 +495,7 @@ def train_one_epoch(model, epoch, criterion_class, infonce, optimizer, accuracy,
             street_embd_norm = F.normalize(street_embd, dim=1)
             features = torch.cat([sate_embd_norm.unsqueeze(1), street_embd_norm.unsqueeze(1)], dim=1)
             loss_infonce = infonce(features, all_label)
-            loss_main = loss_main + loss_infonce
+            #loss_main = loss_main + loss_infonce
             ################################
             
             

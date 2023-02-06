@@ -276,8 +276,114 @@
 
 #191
 # # # #########################################################################
+#  python train_cvusa_fp16_infonce_plpn.py \
+#  --name='191-3090-swint-infonce-lpn' \
+#  --data_dir='../CVUSA_ori/train' \
+#  --erasing_p=0.5 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='0'
+
+
+
+#  python test_cvusa_infonce.py \
+# --name='191-3090-swint-infonce-lpn' \
+# --test_dir='../CVUSA_ori/val' \
+# --gpu_ids='0' \
+#  # #########################################################################
+
+
+
+
+#192
+#########################################################################
+#  python train_cvusa_fp16_infonce_plpn.py \
+#  --name='192-3090-swint-infonce-lpn' \
+#  --data_dir='../CVUSA_ori/train' \
+#  --erasing_p=0.5 \
+#  --block=8 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='0'
+
+
+
+#  python test_cvusa_infonce.py \
+# --name='192-3090-swint-infonce-lpn' \
+# --test_dir='../CVUSA_ori/val' \
+# --gpu_ids='0' \
+#########################################################################
+
+
+
+
+
+#193
+#########################################################################
+#  python train_cvusa_fp16_infonce_plpn.py \
+#  --name='193-1-3090-swint-infonce-lpn' \
+#  --data_dir='../CVUSA_ori/train' \
+#  --erasing_p=0.5 \
+#  --block=4 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='0'
+
+
+
+#  python test_cvusa_infonce.py \
+# --name='193-1-3090-swint-infonce-lpn' \
+# --test_dir='../CVUSA_ori/val' \
+# --gpu_ids='0' \
+#########################################################################.
+
+
+
+
+
+#194
+#########################################################################
+#  python train_cvusa_fp16_infonce_plpn.py \
+#  --name='194-3090-swint-infonce-lpn' \
+#  --data_dir='../CVUSA_ori/train' \
+#  --erasing_p=0.5 \
+#  --block=4 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='0'
+
+
+
+#  python test_cvusa_infonce.py \
+# --name='194-3090-swint-infonce-lpn' \
+# --test_dir='../CVUSA_ori/val' \
+# --gpu_ids='0' \
+#########################################################################
+
+
+
+
+#198
+#########################################################################
  python train_cvusa_fp16_infonce_plpn.py \
- --name='191-3090-swint-infonce-lpn' \
+ --name='198-3090-swint-infonce-lpn' \
  --data_dir='../CVUSA_ori/train' \
  --erasing_p=0.5 \
  --block=12 \
@@ -292,7 +398,7 @@
 
 
  python test_cvusa_infonce.py \
---name='191-3090-swint-infonce-lpn' \
+--name='198-3090-swint-infonce-lpn' \
 --test_dir='../CVUSA_ori/val' \
 --gpu_ids='0' \
-#  # #########################################################################
+#########################################################################

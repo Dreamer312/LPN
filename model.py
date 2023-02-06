@@ -1354,7 +1354,7 @@ class two_view_net_swin_infonce_plpn(nn.Module):
             
         for i in range(self.block):
             name = 'classifier'+str(i)
-            setattr(self, name, ClassBlock(768, class_num, droprate, num_bottleneck=512))
+            setattr(self, name, ClassBlock(768, class_num, droprate))
                         
 
     def forward(self, x1, x2):
