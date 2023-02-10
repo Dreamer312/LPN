@@ -676,3 +676,64 @@ class CVUSA_Data(Data.Dataset):
 
     def __len__(self):
         return len(self.imgs)
+    
+    
+    
+    
+class CVACT_Data(Data.Dataset):
+    def __init__(self, root, street_transform = None, sate_transform = None, loader = default_loader, view='/streetview/'):
+        street_root = root + view
+        classes, class_to_idx = find_classes(street_root)
+        IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif']
+        imgs = make_pair_dataset(street_root, class_to_idx, IMG_EXTENSIONS)
+        if len(imgs) == 0:
+            raise(RuntimeError("Found 0 images in subfolders of: " + root + "\n"
+                               "Supported image extensions are: " + ",".join(IMG_EXTENSIONS)))
+
+        self.root = root
+        self.imgs = imgs
+        self.classes = classes
+        self.class_to_idx = class_to_idx
+        self.street_transform = street_transform
+        self.sate_transform = sate_transform
+        self.loader = loader
+        
+    def _get_pair_sample(self, root, _cls):
+        img_path = []
+        folder_root = root + str(_cls)
+        # print(f"folder_root {folder_root}")
+        assert os.path.isdir(folder_root), 'no pair sat image'
+        for file_name in os.listdir(folder_root):
+            img_path.append(folder_root + '/' + file_name)
+        # rand = np.random.permutation(len(img_path))
+        # tmp_index = rand[0]
+        result_path = img_path[0]
+        # print(f"result_path {result_path}")
+        # assert(0)
+        return result_path
+
+    def __getitem__(self, index):
+            """
+            index (int): Index
+        Returns:tuple: (image, target) where target is class_index of the target class.
+            """
+            #street
+            path, _cls, target = self.imgs[index]
+            street_image = self.loader(path)
+            if self.street_transform is not None:
+                street_image = self.street_transform(street_image)
+                
+            #print(f"street {path}")
+            
+        
+            # Sate
+            sate_root = self.root + '/satview_polish/'
+            sate_path = self._get_pair_sample(sate_root, _cls)
+            sate_image = self.loader(sate_path)
+            if self.sate_transform is not None:
+                sate_image = self.sate_transform(sate_image)
+            
+            return sate_image, street_image, target
+
+    def __len__(self):
+        return len(self.imgs)
