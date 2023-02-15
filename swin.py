@@ -1330,17 +1330,17 @@ if __name__ == '__main__':
     input3 = torch.rand((8, 256, 768), dtype=torch.float)
     
     
-    configuration = SwinConfig(image_size=(256, 256), output_hidden_states=True)
+    configuration = SwinConfig(image_size=(128, 512), output_hidden_states=True)
     model = SwinModel.from_pretrained(pretrained_model_name_or_path='microsoft/swin-tiny-patch4-window7-224',
                                       config=configuration,
                                       ignore_mismatched_sizes=True,
                                       )
     
     
-    output, bfore_downsample = model(input2)
+    output, bfore_downsample = model(input1)
     print(len(output))
     
-    print(bfore_downsample[2].size())
+    print(bfore_downsample[3].size())
     
     # # print(output[0].size())
     # # print(len(output[3]))

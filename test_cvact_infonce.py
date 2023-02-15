@@ -130,7 +130,7 @@ else:
     image_datasets['street'] = datasets.ImageFolder(os.path.join(data_dir, 'streetview'),
                                           data_transforms)
     dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.batchsize,
-                                             shuffle=False, num_workers=16) for x in ['satellite','street']}
+                                             shuffle=False, num_workers=4) for x in ['satellite','street']}
 use_gpu = torch.cuda.is_available()
 
 ######################################################################

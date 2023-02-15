@@ -8,9 +8,8 @@ import os
 import torch
 from collections import defaultdict
 import random
-import math
-import cv2
-cv2.setNumThreads(0)
+
+
 
 
 def has_file_allowed_extension(filename, extensions):
