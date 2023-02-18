@@ -8,7 +8,7 @@ from torchvision import datasets, transforms
 import time
 import os
 # os.environ['CUDA_LAUNCH_BLOCKING']='1'
-from model import two_view_net_swin_infonce_plpn
+from model import two_view_net_swin_infonce_plpn2
 from utils import update_average, load_network, save_network
 import wandb
 from types import SimpleNamespace
@@ -80,11 +80,11 @@ def get_args_parser():
 
 def train_model(opt):
     data_dir = opt.data_dir
-
+#transforms.Resize((opt.h, opt.w), interpolation=3)
     transform_train_list_street = [
-    transforms.Resize((128, 512), interpolation=3),
+    transforms.Resize((opt.h, opt.w), interpolation=3),
     transforms.Pad(opt.pad, padding_mode='edge'),
-    transforms.RandomCrop((128, 512)),
+    transforms.RandomCrop((opt.h, opt.w)),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
@@ -99,6 +99,20 @@ def train_model(opt):
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]
     
+    # transform_train_list_street = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.8),
+    #                                 gray_scale(p=0.3),
+    #                                 Solarization(p=0.2),
+    #                                 GaussianBlur(p=0.3),
+    #                               ] + transform_train_list_street + [RandomErasing(probability=opt.erasing_p, mean=[0.0, 0.0, 0.0])]
+    
+    # transform_train_list_sate = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.8),
+    #                                 gray_scale(p=0.3),
+    #                                 Solarization(p=0.2),
+    #                                 GaussianBlur(p=0.3),
+    #                               ] + transform_train_list_sate + [RandomErasing(probability=opt.erasing_p, mean=[0.0, 0.0, 0.0])]
+
+
+
     transform_train_list_street = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.4),
                                     gray_scale(p=0.3),
                                     Solarization(p=0.2),
@@ -141,10 +155,10 @@ def train_model(opt):
     print(f'there are {len(class_names)} IDs')
 
     # ============ building networks ... ============
-    model = two_view_net_swin_infonce_plpn(len(class_names), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
+    model = two_view_net_swin_infonce_plpn2(len(class_names), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
                                       LPN=True, block=opt.block)
 
-    accuracy = Accuracy(num_classes=len(class_names)).cuda()
+    accuracy = Accuracy(num_classes=len(class_names), task='multiclass').cuda()
     
     
     print(model)
@@ -187,8 +201,8 @@ def train_model(opt):
 
     #=================scheduler =======================
     scheduler = lr_scheduler.StepLR(optimizer, step_size=80, gamma=0.1)
-    
-    #scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[80,120,160])
+
+    #scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[80,120,160], gamma=0.1)
 
 
 
@@ -569,7 +583,10 @@ def train_one_epoch(model, epoch, criterion_class, infonce, optimizer, accuracy,
     
     scheduler.step()
 
-    if (epoch+1) % 20 == 0:
+    # if (epoch+1) % 20 == 0:
+    #     save_network(model, opt.name, epoch)
+    
+    if (epoch+1) == num_epochs:
         save_network(model, opt.name, epoch)
 
 
@@ -609,4 +626,3 @@ if __name__ =='__main__':
     
     
     train_model(opt)
-

@@ -6,9 +6,12 @@ import scipy.io as sio
 from scipy.misc import imread, imsave
 import cv2
 
-allDataList = './ACT_data.mat'
+#allDataList = './ACT_data.mat'
+
+allDataList = '/home/ttq/cmh/CVACT/ACT_data2.mat'
 anuData = sio.loadmat(allDataList)
-img_root = '/home/wangtyu/ANU_data_small/'
+#img_root = '/home/wangtyu/ANU_data_small/'
+img_root = '/home/ttq/cmh/CVACT/ANU_data_small/'
 
 idx = 0
 id_alllist = []
@@ -39,7 +42,10 @@ for k in range(valNum):
 
 # prepare training set
 print('begin to prepare train')
-d_train_dir = '/home/wangtyu/datasets/CVACT/train'
+#d_train_dir = '/home/wangtyu/datasets/CVACT/train'
+
+d_train_dir = '/home/ttq/cmh/CVACT/train'
+
 for m in range(trainNum):
     s_str_dir = trainList[m][0]
     s_sat_dir = trainList[m][1]
@@ -88,7 +94,10 @@ for m in range(trainNum):
  
 #prepare val set
 print('begin to prepare val')
-d_val_dir = '/home/wangtyu/datasets/CVACT/val'
+#d_val_dir = '/home/wangtyu/datasets/CVACT/val'
+
+d_val_dir = '/home/ttq/cmh/CVACT/val'
+
 for m in range(valNum):
     s_str_dir = valList[m][0]
     s_sat_dir = valList[m][1]

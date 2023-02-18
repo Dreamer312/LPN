@@ -7,6 +7,8 @@ from torch.optim import lr_scheduler
 from torchvision import datasets, transforms
 import time
 import os
+import math
+from torch.optim.lr_scheduler import LambdaLR
 # os.environ['CUDA_LAUNCH_BLOCKING']='1'
 from model import two_view_net_swin_infonce_plpn
 from utils import update_average, load_network, save_network
@@ -82,9 +84,9 @@ def train_model(opt):
     data_dir = opt.data_dir
 
     transform_train_list_street = [
-    transforms.Resize((128, 512), interpolation=3),
+    transforms.Resize((opt.h, opt.w), interpolation=3),
     transforms.Pad(opt.pad, padding_mode='edge'),
-    transforms.RandomCrop((128, 512)),
+    transforms.RandomCrop((opt.h, opt.w)),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
@@ -99,13 +101,13 @@ def train_model(opt):
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]
     
-    transform_train_list_street = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.4),
+    transform_train_list_street = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.8),
                                     gray_scale(p=0.3),
                                     Solarization(p=0.2),
                                     GaussianBlur(p=0.3),
                                   ] + transform_train_list_street + [RandomErasing(probability=opt.erasing_p, mean=[0.0, 0.0, 0.0])]
     
-    transform_train_list_sate = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.4),
+    transform_train_list_sate = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.8),
                                     gray_scale(p=0.3),
                                     Solarization(p=0.2),
                                     GaussianBlur(p=0.3),
@@ -153,7 +155,7 @@ def train_model(opt):
 
     
     model = model.cuda()
-    num_epochs = 200
+    num_epochs = 120
     start_epoch = 0
 
     #============= Loss ===============================
@@ -161,34 +163,39 @@ def train_model(opt):
     infonce = SupConLoss(temperature=0.1)
 
     # ============ preparing optimizer ... ============
-    lr_skip_keywords = {"model_1", "model_2", "plpn"} #"model_4"
-    wd_skip_keywords = {'absolute_pos_embed', 'relative_position_bias_table', 'norm', "pos_embed"}
+    # lr_skip_keywords = {"model_1", "model_2", "plpn"} #"model_4"
+    # wd_skip_keywords = {'absolute_pos_embed', 'relative_position_bias_table', 'norm', "pos_embed"}
 
-    parameters = set_wd_lr_normal(model, wd_skip_keywords, lr_skip_keywords, opt.lr)
+    # parameters = set_wd_lr_normal(model, wd_skip_keywords, lr_skip_keywords, opt.lr)
 
-    if opt.optimizer == "Adamw":
-        args = SimpleNamespace()
-        args.weight_decay = 0.05
-        args.opt = 'adamw'
-        args.lr = opt.lr
-        args.momentum = 0.9
-        optimizer = create_optimizer(args, parameters)
-    elif opt.optimizer == "SGD":
-        args = SimpleNamespace()
-        args.weight_decay = 5e-4
-        args.opt = 'sgd'
-        args.lr = opt.lr
-        args.momentum = 0.9
-        args.nesterov = True
-        optimizer = create_optimizer(args, parameters)
+    # if opt.optimizer == "Adamw":
+    #     args = SimpleNamespace()
+    #     args.weight_decay = 0.05
+    #     args.opt = 'adamw'
+    #     args.lr = opt.lr
+    #     args.momentum = 0.9
+    #     optimizer = create_optimizer(args, parameters)
+    # elif opt.optimizer == "SGD":
+    #     args = SimpleNamespace()
+    #     args.weight_decay = 5e-4
+    #     args.opt = 'sgd'
+    #     args.lr = opt.lr
+    #     args.momentum = 0.9
+    #     args.nesterov = True
+    #     optimizer = create_optimizer(args, parameters)
+    
+    optimizer = torch.optim.AdamW(model.parameters(),
+                                  lr=opt.lr,
+                                  weight_decay=0.03)
 
     # =================FP 16 scaler====================
     scaler = torch.cuda.amp.GradScaler()
 
     #=================scheduler =======================
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=80, gamma=0.1)
+    # scheduler = lr_scheduler.StepLR(optimizer, step_size=80, gamma=0.1)
     
-    #scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[80,120,160])
+    t_total = num_epochs * len(dataloaders)
+    scheduler = WarmupCosineSchedule(optimizer, warmup_steps=0, t_total=t_total)
 
 
 
@@ -322,7 +329,25 @@ class SupConLoss(nn.Module):
         return loss
 
 
+class WarmupCosineSchedule(LambdaLR):
+    """ Linear warmup and then cosine decay.
+        Linearly increases learning rate from 0 to 1 over `warmup_steps` training steps.
+        Decreases learning rate from 1. to 0. over remaining `t_total - warmup_steps` steps following a cosine curve.
+        If `cycles` (default=0.5) is different from default, learning rate follows cosine function after warmup.
+    """
+    def __init__(self, optimizer, warmup_steps, t_total, cycles=.5, last_epoch=-1, min_lr=1e-6):
+        self.warmup_steps = warmup_steps
+        self.t_total = t_total
+        self.cycles = cycles
+        self.min_lr = min_lr
+        super(WarmupCosineSchedule, self).__init__(optimizer, self.lr_lambda, last_epoch=last_epoch)
 
+    def lr_lambda(self, step):
+        if step < self.warmup_steps:
+            return float(step) / float(max(1.0, self.warmup_steps))
+        # progress after warmup
+        progress = float(step - self.warmup_steps) / float(max(1, self.t_total - self.warmup_steps))
+        return max(self.min_lr, 0.5 * (1. + math.cos(math.pi * float(self.cycles) * 2.0 * progress)))
 
 #https://github.com/facebookresearch/deit/blob/main/augment.py
 class GaussianBlur(object):
@@ -525,6 +550,8 @@ def train_one_epoch(model, epoch, criterion_class, infonce, optimizer, accuracy,
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
+        
+        scheduler.step() 
 
         running_loss += loss.item() 
         running_loss_main += loss_main.item() 
@@ -565,9 +592,6 @@ def train_one_epoch(model, epoch, criterion_class, infonce, optimizer, accuracy,
     print(f"epoch_loss_global: {epoch_loss_global:.4f},       epoch_loss_branch4: {epoch_loss_branch4:.4f}     epoch_infonce_sup: {epoch_infonce_loss} ")
     print(f"Satellite_Acc:{100*epoch_acc_sate:.4f}%    Street_Acc:{100*epoch_acc_street:.4f}%")
     print(f"Satellite_LPN_Acc:{100*epoch_lpn_acc_sate:.4f}%    Street_LPN_Acc:{100*epoch_lpn_acc_street:.4f}%")
-
-    
-    scheduler.step()
 
     if (epoch+1) % 20 == 0:
         save_network(model, opt.name, epoch)

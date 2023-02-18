@@ -63,7 +63,7 @@ def apply_aerial_polar_transform(src_path, dst_path, imgname):
 
 ######################### prepare cvusa dataset ###########################
 
-download_path = '/home/wangtyu/Datasets/cvusa/'
+download_path = '/home/ttq/cmh/CVUSA_ori/'
 train_split = download_path + 'splits/train-19zl.csv'
 train_save_path = download_path + 'train_pt/'  # polar transform satellite images
 
