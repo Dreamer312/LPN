@@ -382,23 +382,75 @@
 
 #198
 #########################################################################
- python train_cvusa_fp16_infonce_plpn.py \
- --name='198-3090-swint-infonce-lpn' \
- --data_dir='../CVUSA_ori/train' \
- --erasing_p=0.5 \
- --block=12 \
- --droprate=0.75 \
- --h=256 \
- --w=256 \
- --lr=0.04 \
- --optimizer='SGD' \
- --batchsize=32 \
- --gpu_ids='0'
+#  python train_cvusa_fp16_infonce_plpn.py \
+#  --name='198-3090-swint-infonce-lpn' \
+#  --data_dir='../CVUSA_ori/train' \
+#  --erasing_p=0.5 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='0'
 
 
 
- python test_cvusa_infonce.py \
---name='198-3090-swint-infonce-lpn' \
---test_dir='../CVUSA_ori/val' \
---gpu_ids='0' \
+#  python test_cvusa_infonce.py \
+# --name='198-3090-swint-infonce-lpn' \
+# --test_dir='../CVUSA_ori/val' \
+# --gpu_ids='0' \
+#########################################################################
+
+
+
+
+
+#########################################################################
+#  python train_cvusa_uqpt.py \
+#  --name='200-1-swint-infonce-UQPT' \
+#  --data_dir='/root/autodl-tmp/CVUSA/train' \
+#  --erasing_p=0.5 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='0'
+
+
+
+#  python test_cvusa_infonce.py \
+# --name='200-swint-infonce-UQPT' \
+# --test_dir='../CVUSA_ori/val' \
+# --gpu_ids='0' \
+#########################################################################
+
+
+
+
+
+#########################################################################
+#  python train_cvusa_uqpt.py \
+#  --name='200-2-swint-infonce-UQPT' \
+#  --data_dir='/root/autodl-tmp/CVUSA/train' \
+#  --erasing_p=0.5 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='1'
+
+
+
+#  python test_cvusa_infonce.py \
+# --name='200-2-swint-infonce-UQPT' \
+# --test_dir='../CVUSA_ori/val' \
+# --gpu_ids='0' \
 #########################################################################

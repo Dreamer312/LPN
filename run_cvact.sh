@@ -340,3 +340,210 @@
 # --test_dir='/root/autodl-tmp/cvact_val' \
 # --gpu_ids='0' \
 # #########################################################################
+
+
+
+
+# #########################################################################
+#  python train_cvact_fp16_infonce_plpn.py \
+#  --name='199-19-3090-swint-infonce-lpn' \
+#  --data_dir='/root/autodl-tmp/cvact_train' \
+#  --erasing_p=0.3 \
+#  --block=12 \
+#  --droprate=0.5 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='0'
+
+
+
+#  python test_cvact_infonce.py \
+# --name='199-19-3090-swint-infonce-lpn' \
+# --test_dir='/root/autodl-tmp/cvact_val' \
+# --gpu_ids='0' \
+# #########################################################################
+
+
+
+# # #########################################################################
+#  python train_cvact_fp16_infonce_plpn.py \
+#  --name='199-20-3090-swint-infonce-lpn' \
+#  --data_dir='/root/autodl-tmp/cvact_train' \
+#  --erasing_p=0.2 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='1'
+
+
+#  python test_cvact_infonce.py \
+# --name='199-20-3090-swint-infonce-lpn' \
+# --test_dir='/root/autodl-tmp/cvact_val' \
+# --gpu_ids='1' \
+# # #########################################################################
+
+
+
+# # #########################################################################
+#  python train_cvact_fp16_infonce_plpn.py \
+#  --name='199-22-3090-swint-infonce-lpn' \
+#  --data_dir='/root/autodl-tmp/cvact_train' \
+#  --erasing_p=0.4 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='0'
+
+
+
+#  python test_cvact_infonce.py \
+# --name='199-22-3090-swint-infonce-lpn' \
+# --test_dir='/root/autodl-tmp/cvact_val' \
+# --gpu_ids='0' \
+# # #########################################################################
+
+
+
+# # #########################################################################
+#  python train_cvact_fp16_infonce_plpn.py \
+#  --name='199-23-3090-swint-infonce-lpn' \
+#  --data_dir='/root/autodl-tmp/cvact_train' \
+#  --erasing_p=0.3 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='1'
+
+
+#  python test_cvact_infonce.py \
+# --name='199-23-3090-swint-infonce-lpn' \
+# --test_dir='/root/autodl-tmp/cvact_val' \
+# --gpu_ids='1' \
+# # #########################################################################
+
+
+
+
+# # #########################################################################
+#  python train_cvact_fp16_infonce_plpn2.py \
+#  --name='199-25-3090-swint-infonce-lpn' \
+#  --data_dir='/root/autodl-tmp/cvact_train' \
+#  --erasing_p=0.2 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='0'
+
+
+
+#  python test_cvact_infonce2.py \
+# --name='199-25-3090-swint-infonce-lpn' \
+# --test_dir='/root/autodl-tmp/cvact_val' \
+# --gpu_ids='0' \
+# # #########################################################################
+
+
+
+
+# # #########################################################################
+#  python train_cvact_fp16_infonce_plpn2.py \
+#  --name='199-26-3090-swint-infonce-lpn' \
+#  --data_dir='/root/autodl-tmp/cvact_train' \
+#  --erasing_p=0.2 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='0'
+
+
+#  python test_cvact_infonce2.py \
+# --name='199-26-3090-swint-infonce-lpn' \
+# --test_dir='/root/autodl-tmp/cvact_val' \
+# --gpu_ids='0' \
+# # #########################################################################
+
+
+
+
+
+# # #########################################################################
+#  python train_cvact_fp16_infonce_plpn2.py \
+#  --name='199-28-3090-swint-infonce-lpn' \
+#  --data_dir='/root/autodl-tmp/cvact_train' \
+#  --erasing_p=0.3 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='0'
+
+
+#  python test_cvact_infonce2.py \
+# --name='199-28-3090-swint-infonce-lpn' \
+# --test_dir='/root/autodl-tmp/cvact_val' \
+# --gpu_ids='0' \
+# # #########################################################################
+
+
+
+# # #########################################################################
+#  python train_cvact_fp16_infonce_plpn2.py \
+#  --name='199-29-3090-swint-infonce-lpn' \
+#  --data_dir='/root/autodl-tmp/cvact_train' \
+#  --erasing_p=0.3 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='1'
+
+
+#  python test_cvact_infonce2.py \
+# --name='199-29-3090-swint-infonce-lpn' \
+# --test_dir='/root/autodl-tmp/cvact_val' \
+# --gpu_ids='1' \
+# # #########################################################################
+
+
+
+
+
+
+#  python test_cvact_infonce2.py \
+# --name='199-27' \
+# --test_dir='/root/autodl-tmp/cvact_val' \
+# --gpu_ids='1' \
+
+
+
+
+
