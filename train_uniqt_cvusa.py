@@ -8,7 +8,7 @@ from torchvision import datasets, transforms
 import time
 import os
 # os.environ['CUDA_LAUNCH_BLOCKING']='1'
-from model import two_view_net_swin_infonce_plpn2
+from model import two_view_net_swin_infonce_plpn2, two_view_UPQT_e2e
 from utils import update_average, load_network, save_network
 import wandb
 from types import SimpleNamespace
@@ -21,9 +21,7 @@ from PIL import ImageFilter, ImageOps
 from random_erasing import RandomErasing
 import yaml
 from tqdm import tqdm
-
-# wandb. init(mode="disabled")
-wandb.init(project="UniQT", entity="dreamer0312")
+wandb.init(project="university", entity="dreamer0312")
 
 version = torch.__version__
 
@@ -143,7 +141,7 @@ def train_model(opt):
     print(f'there are {len(class_names)} IDs')
 
     # ============ building networks ... ============
-    model = two_view_net_swin_infonce_plpn2(len(class_names), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
+    model = two_view_UPQT_e2e(len(class_names), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
                                       LPN=True, block=opt.block)
 
     accuracy = Accuracy(num_classes=len(class_names), task='multiclass').cuda()
@@ -439,8 +437,6 @@ def one_LPN_output(outputs, labels, criterion, block):
     loss = loss / num_part
 
     return preds, loss
-
-
 
 
 def train_one_epoch(model, epoch, criterion_class, infonce, optimizer, accuracy, dataloaders, scheduler, scaler, num_epochs, opt):

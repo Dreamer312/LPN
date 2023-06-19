@@ -2,7 +2,7 @@ import os
 import torch
 import yaml
 import torch.nn as nn
-import parser
+# import parser
 from model import ft_net, two_view_net, three_view_net, two_view_net_swin, two_view_net_swin_infonce, two_view_net_swinB_infonce, two_view_net_swin_infonce_plpn, two_view_net_swin_infonce_plpn2
 
 def make_weights_for_balanced_classes(images, nclasses):

@@ -4,26 +4,24 @@ import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 from torch.optim import lr_scheduler
-from torchvision import datasets, transforms
+from torchvision import transforms
 import time
 import os
 # os.environ['CUDA_LAUNCH_BLOCKING']='1'
 from model import two_view_net_swin_infonce_plpn2
-from utils import update_average, load_network, save_network
-import wandb
+from utils import save_network
 from types import SimpleNamespace
 from timm.optim.optim_factory import create_optimizer
 from torchmetrics import Accuracy
-from wty_new_image_folder import CVUSA_Data
+from wty_new_image_folder import CVACT_Data
 from torch.nn import functional as F
 import random
 from PIL import ImageFilter, ImageOps
 from random_erasing import RandomErasing
 import yaml
 from tqdm import tqdm
+from accelerate import Accelerator
 
-# wandb. init(mode="disabled")
-wandb.init(project="UniQT", entity="dreamer0312")
 
 version = torch.__version__
 
@@ -81,6 +79,19 @@ def get_args_parser():
 
 
 def train_model(opt):
+
+    accelerate = Accelerator(mixed_precision='fp16', log_with="wandb")
+    #accelerate.init_trackers("UniQT")
+
+    if accelerate.is_main_process:
+        dir_name = os.path.join('./model', opt.name)
+        if not os.path.isdir(dir_name):
+            os.mkdir(dir_name)
+
+        # save opts
+        with open('%s/opts.yaml' % dir_name, 'w') as fp:
+            yaml.dump(vars(opt), fp, default_flow_style=False)
+
     data_dir = opt.data_dir
 
     transform_train_list_street = [
@@ -91,6 +102,7 @@ def train_model(opt):
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]
+
     
     transform_train_list_sate = [
     transforms.Resize((opt.h, opt.w), interpolation=3),
@@ -100,14 +112,21 @@ def train_model(opt):
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]
+
+    invTrans = transforms.Compose([ transforms.Normalize(mean = [ 0., 0., 0. ],
+                                                     std = [ 1/0.229, 1/0.224, 1/0.225 ]),
+                                transforms.Normalize(mean = [ -0.485, -0.456, -0.406 ],
+                                                     std = [ 1., 1., 1. ]),
+                               ])
+                               
     
-    transform_train_list_street = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.8),
+    transform_train_list_street = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.4),
                                     gray_scale(p=0.3),
                                     Solarization(p=0.2),
                                     GaussianBlur(p=0.3),
                                   ] + transform_train_list_street + [RandomErasing(probability=opt.erasing_p, mean=[0.0, 0.0, 0.0])]
     
-    transform_train_list_sate = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.8),
+    transform_train_list_sate = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.4),
                                     gray_scale(p=0.3),
                                     Solarization(p=0.2),
                                     GaussianBlur(p=0.3),
@@ -122,25 +141,29 @@ def train_model(opt):
     ]
 
 
-
-
-    print(transform_train_list_street)
+    accelerate.print(transform_train_list_street)
     data_transforms = {
         'train_street': transforms.Compose(transform_train_list_street),
         'train_sate' : transforms.Compose(transform_train_list_sate),
         'val': transforms.Compose(transform_val_list)}
 
+    image_datasets = CVACT_Data(data_dir, data_transforms['train_street'], data_transforms['train_sate'])
 
+    tensor_to_image = transforms.ToPILImage()
+    for data in image_datasets:
+        sate_data, street_data, all_label = data
+        print(street_data.size())
+        image_street_data = invTrans(street_data)
+        image_street_data = tensor_to_image(image_street_data)
+        image_street_data.save('image_street_data.jpg')
+        assert(0)
 
-    image_datasets = CVUSA_Data(data_dir, data_transforms['train_street'], data_transforms['train_sate'])
-    
 
     dataloaders = torch.utils.data.DataLoader(image_datasets, batch_size=opt.batchsize,
                                               shuffle=True, num_workers=9, pin_memory=True, drop_last=True)
-    print(image_datasets.__len__())
 
     class_names = image_datasets.classes
-    print(f'there are {len(class_names)} IDs')
+    accelerate.print(f'there are {len(class_names)} IDs')
 
     # ============ building networks ... ============
     model = two_view_net_swin_infonce_plpn2(len(class_names), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
@@ -149,12 +172,11 @@ def train_model(opt):
     accuracy = Accuracy(num_classes=len(class_names), task='multiclass').cuda()
     
     
-    print(model)
+    accelerate.print(model)
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f'number of params: {n_parameters//1000000} M')
+    accelerate.print(f'number of params: {n_parameters//1000000} M')
 
     
-    model = model.cuda()
     num_epochs = 200
     start_epoch = 0
 
@@ -185,7 +207,7 @@ def train_model(opt):
         optimizer = create_optimizer(args, parameters)
 
     # =================FP 16 scaler====================
-    scaler = torch.cuda.amp.GradScaler()
+    #scaler = torch.cuda.amp.GradScaler()
 
     #=================scheduler =======================
     scheduler = lr_scheduler.StepLR(optimizer, step_size=80, gamma=0.1)
@@ -194,22 +216,25 @@ def train_model(opt):
 
 
 
+    model, criterion_class, infonce, optimizer, dataloaders = accelerate.prepare(model, criterion_class, infonce, optimizer, dataloaders)
+
+
     #########################################################
     since = time.time()
     for epoch in range(num_epochs - start_epoch):
         epoch = epoch + start_epoch
-        print('=========================================')
-        print(f'Epoch {epoch}/{(num_epochs - 1)}')
-        print('-' * 10)
+        accelerate.print('=========================================')
+        accelerate.print(f'Epoch {epoch}/{(num_epochs - 1)}')
+        accelerate.print('-' * 10)
         
 
-        train_one_epoch(model, epoch, criterion_class, infonce, 
-                        optimizer, accuracy, dataloaders, scheduler, scaler, num_epochs ,opt)
+        train_one_epoch(accelerate, model, epoch, criterion_class, infonce, 
+                        optimizer, accuracy, dataloaders, scheduler, num_epochs ,opt)
                         
         time_elapsed = time.time() - since
-        print('Training complete in {:.0f}m {:.0f}s\n'.format(
+        accelerate.print('Training complete in {:.0f}m {:.0f}s\n'.format(
         time_elapsed // 60, time_elapsed % 60))
-
+    accelerate.end_training()
 
 
 
@@ -441,9 +466,7 @@ def one_LPN_output(outputs, labels, criterion, block):
     return preds, loss
 
 
-
-
-def train_one_epoch(model, epoch, criterion_class, infonce, optimizer, accuracy, dataloaders, scheduler, scaler, num_epochs, opt):
+def train_one_epoch(accelerate, model, epoch, criterion_class, infonce, optimizer, accuracy, dataloaders, scheduler, num_epochs, opt):
 
     running_loss = 0.0
     running_loss_main = 0.0
@@ -459,8 +482,8 @@ def train_one_epoch(model, epoch, criterion_class, infonce, optimizer, accuracy,
     running_loss_global = 0.0
 
 
-    for data in tqdm(dataloaders):
-        
+
+    for data in (tqdm(dataloaders) if accelerate.is_local_main_process else dataloaders):
         step_corrects = 0.0
         step_corrects2 = 0.0
         step_corrects3 = 0.0
@@ -471,64 +494,60 @@ def train_one_epoch(model, epoch, criterion_class, infonce, optimizer, accuracy,
         
 
         sate_data, street_data,  all_label = data
-        sate_data = sate_data.cuda(non_blocking=True)
-        street_data = street_data.cuda(non_blocking=True)
-        all_label = all_label.cuda(non_blocking=True)
+        # sate_data = sate_data.cuda(non_blocking=True)
+        # street_data = street_data.cuda(non_blocking=True)
+        # all_label = all_label.cuda(non_blocking=True)
         
-
         # zero the parameter gradients
         optimizer.zero_grad()
 
         
+        result = model(sate_data, street_data)
+        y1_s4_logits, y2_s4_logits = result['global_logits']
+        _, preds = torch.max(y1_s4_logits.data, 1)
+        _, preds2 = torch.max(y2_s4_logits.data, 1)
 
-        with torch.cuda.amp.autocast():
-            result = model(sate_data, street_data)
-            y1_s4_logits, y2_s4_logits = result['global_logits']
-            _, preds = torch.max(y1_s4_logits.data, 1)
-            _, preds2 = torch.max(y2_s4_logits.data, 1)
 
+        loss_global = criterion_class(y1_s4_logits, all_label) + criterion_class(y2_s4_logits, all_label)
+
+        # print(f'loss_global')
+        # assert(0)
+        loss_main = loss_main + loss_global
+        #loss_main = torch.tensor([0.]).cuda()
+        
+        ################################
+        sate_embd, street_embd= result['global_embedding']
+        sate_embd_norm = F.normalize(sate_embd, dim=1)
+        street_embd_norm = F.normalize(street_embd, dim=1)
+        features = torch.cat([sate_embd_norm.unsqueeze(1), street_embd_norm.unsqueeze(1)], dim=1)
+        loss_infonce = infonce(features, all_label)
+        loss_main = loss_main + loss_infonce
+        ################################
+        
+        
+        
+        #########################################
     
-            loss_global = criterion_class(y1_s4_logits, all_label) + criterion_class(y2_s4_logits, all_label)
+        y1_s4_res_logits, y2_s4_res_logits = result['part_logits']
 
-            # print(f'loss_global')
-            # assert(0)
-            loss_main = loss_main + loss_global
-            #loss_main = torch.tensor([0.]).cuda()
-            
-            ################################
-            sate_embd, street_embd= result['global_embedding']
-            sate_embd_norm = F.normalize(sate_embd, dim=1)
-            street_embd_norm = F.normalize(street_embd, dim=1)
-            features = torch.cat([sate_embd_norm.unsqueeze(1), street_embd_norm.unsqueeze(1)], dim=1)
-            loss_infonce = infonce(features, all_label)
-            loss_main = loss_main + loss_infonce
-            ################################
-            
-            
-            
-            #########################################
+        branch4_preds, branch4_loss = one_LPN_output(y1_s4_res_logits, all_label, criterion_class, opt.block)
         
-            y1_s4_res_logits, y2_s4_res_logits = result['part_logits']
-
-            branch4_preds, branch4_loss = one_LPN_output(y1_s4_res_logits, all_label, criterion_class, opt.block)
-            
-            branch4_preds2, branch4_loss2 = one_LPN_output(y2_s4_res_logits, all_label, criterion_class, opt.block)
-            loss_branch4 = branch4_loss +  branch4_loss2
-            loss_branch4 = loss_branch4 #/ 3.0
-        
-            loss = loss_main + loss_branch4
-            #loss = loss_branch4
+        branch4_preds2, branch4_loss2 = one_LPN_output(y2_s4_res_logits, all_label, criterion_class, opt.block)
+        loss_branch4 = branch4_loss +  branch4_loss2
+        loss_branch4 = loss_branch4 #/ 3.0
+    
+        loss = loss_main + loss_branch4
+        #loss = loss_branch4
         
         # if one_epoch_step%100==0:
         #     print(f"loss {loss.item() }")
         #     print(f"loss_branch4 {loss_branch4.item() }")
         #     print(f"loss_global {loss_global.item() }")
 
-        wandb.log({"step loss": loss})
+        accelerate.backward(loss)
+        optimizer.step()
 
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+        accelerate.log({"step loss": loss.item()})
 
         running_loss += loss.item() 
         running_loss_main += loss_main.item() 
@@ -563,12 +582,12 @@ def train_one_epoch(model, epoch, criterion_class, infonce, optimizer, accuracy,
     epoch_lpn_acc_street = step_lpn_corrects2_accu / one_epoch_step
     epoch_loss_global = running_loss_global / one_epoch_step
     
-    wandb.log({"epoch_loss": epoch_loss})
+    #wandb.log({"epoch_loss": epoch_loss})
 
-    print(f'Loss: {epoch_loss:.4f}')
-    print(f"epoch_loss_global: {epoch_loss_global:.4f},       epoch_loss_branch4: {epoch_loss_branch4:.4f}     epoch_infonce_sup: {epoch_infonce_loss} ")
-    print(f"Satellite_Acc:{100*epoch_acc_sate:.4f}%    Street_Acc:{100*epoch_acc_street:.4f}%")
-    print(f"Satellite_LPN_Acc:{100*epoch_lpn_acc_sate:.4f}%    Street_LPN_Acc:{100*epoch_lpn_acc_street:.4f}%")
+    accelerate.print(f'Loss: {epoch_loss:.4f}')
+    accelerate.print(f"epoch_loss_global: {epoch_loss_global:.4f},       epoch_loss_branch4: {epoch_loss_branch4:.4f}     epoch_infonce_sup: {epoch_infonce_loss} ")
+    accelerate.print(f"Satellite_Acc:{100*epoch_acc_sate:.4f}%    Street_Acc:{100*epoch_acc_street:.4f}%")
+    accelerate.print(f"Satellite_LPN_Acc:{100*epoch_lpn_acc_sate:.4f}%    Street_LPN_Acc:{100*epoch_lpn_acc_street:.4f}%")
 
     
     scheduler.step()
@@ -576,43 +595,25 @@ def train_one_epoch(model, epoch, criterion_class, infonce, optimizer, accuracy,
     # if (epoch+1) % 20 == 0:
     #     save_network(model, opt.name, epoch)
 
-    if (epoch+1) == num_epochs:
-        save_network(model, opt.name, epoch)
+    if accelerate.is_main_process:  
+        if (epoch+1) == num_epochs:
+            unwrp_model = accelerate.unwrap_model(model)        
+            save_network(unwrp_model, opt.name, epoch)
+        
+        each_epoch_path = os.path.join('./model',opt.name,'each_epoch')
+        if not os.path.isdir(each_epoch_path):
+            os.mkdir(each_epoch_path)
+        accelerate.save_state(each_epoch_path)
+        
+
+    
 
 
 
 
 if __name__ =='__main__':
     #fix_random_seeds(114514)
-
     parser = get_args_parser()
     opt = parser.parse_args() 
-    opt.nclasses = 35532
-    
-    str_ids = opt.gpu_ids.split(',')
-    gpu_ids = []
-    for str_id in str_ids:
-        gid = int(str_id)
-        if gid >= 0:
-            gpu_ids.append(gid)
-
-    # set gpu ids
-    if len(gpu_ids) > 0:
-        # torch.cuda.set_device(gpu_ids[0])
-        cudnn.benchmark = True
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_ids[0])
-        print(f' training is on GPU {gpu_ids[0]}')
-        
-    dir_name = os.path.join('./model', opt.name)
-    if not opt.resume:
-        if not os.path.isdir(dir_name):
-            os.mkdir(dir_name)
-
-        # save opts
-        with open('%s/opts.yaml' % dir_name, 'w') as fp:
-            yaml.dump(vars(opt), fp, default_flow_style=False)
-    
-    
-    
-    
+    opt.nclasses = 35531
     train_model(opt)

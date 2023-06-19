@@ -17,6 +17,7 @@ import os
 import scipy.io
 import yaml
 import math
+from model import ft_net, two_view_net, three_view_net
 from utils import load_network
 
 #fp16
@@ -136,9 +137,9 @@ else:
     # dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.batchsize,
     #                                          shuffle=False, num_workers=16) for x in ['satellite','street']}
     image_datasets = {}
-    image_datasets['satellite'] = datasets.ImageFolder(os.path.join(data_dir, 'satellite'),
+    image_datasets['satellite'] = datasets.ImageFolder(os.path.join(data_dir, 'satview_polish'),
                                             data_transforms_sat)
-    image_datasets['street'] = datasets.ImageFolder(os.path.join(data_dir, 'street'),
+    image_datasets['street'] = datasets.ImageFolder(os.path.join(data_dir, 'streetview'),
                                           data_transforms_street)
     dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.batchsize,
                                              shuffle=False, num_workers=9) for x in ['satellite','street']}
@@ -305,4 +306,3 @@ if __name__ == "__main__":
     print(opt.name)
     result = './model/%s/result.txt'%opt.name
     os.system('CUDA_VISIBLE_DEVICES=%d python evaluate_gpu.py | tee -a %s'%(gpu_ids[0],result))
-

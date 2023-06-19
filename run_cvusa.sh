@@ -454,3 +454,105 @@
 # --test_dir='../CVUSA_ori/val' \
 # --gpu_ids='0' \
 #########################################################################
+
+
+
+
+#########################################################################
+#  python train_cvusa_uqpt.py \
+#  --name='cvusa-swint-infonce-UQPT-1' \
+#  --data_dir='/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/train' \
+#  --erasing_p=0.5 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='1'
+
+
+
+# python test_cvusa_infonce.py \
+# --name='cvusa-swint-infonce-UQPT-1' \
+# --test_dir='/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/val' \
+# --batchsize=512 \
+# --gpu_ids='0' \
+#########################################################################
+
+
+
+#########################################################################
+#  python train_cvusa_uqpt.py \
+#  --name='cvusa-swint-infonce-UQPT-2' \
+#  --data_dir='/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/train' \
+#  --erasing_p=0.5 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.1 \
+#  --optimizer='SGD' \
+#  --batchsize=128 \
+#  --gpu_ids='0'
+
+
+
+#  python test_cvusa_infonce.py \
+# --name='cvusa-swint-infonce-UQPT-2' \
+# --test_dir='/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/val' \
+# --batchsize=512 \
+# --gpu_ids='1' \
+#########################################################################
+
+
+
+
+########################################################################
+#  python train_cvusa_uqpt.py \
+#  --name='cvusa-swint-infonce-UQPT-3' \
+#  --data_dir='/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/train' \
+#  --erasing_p=0.5 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --gpu_ids='0'
+
+
+
+#  python test_cvusa_infonce.py \
+# --name='cvusa-swint-infonce-UQPT-2' \
+# --test_dir='/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/val' \
+# --batchsize=512 \
+# --gpu_ids='1' \
+#########################################################################
+
+
+
+########################################################################
+#  python train_cvusa_uqpt.py \
+#  --name='cvusa-swint-infonce-UQPT-4' \
+#  --data_dir='/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/train' \
+#  --erasing_p=0.5 \
+#  --block=12 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.15 \
+#  --optimizer='SGD' \
+#  --batchsize=128 \
+#  --gpu_ids='1'
+
+
+
+ python test_cvusa_infonce.py \
+--name='cvusa-swint-infonce-UQPT-4' \
+--test_dir='/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/val' \
+--batchsize=512 \
+--gpu_ids='1' \
+#########################################################################

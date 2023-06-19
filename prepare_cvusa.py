@@ -1,10 +1,11 @@
 import os
 from shutil import copyfile
-import numpy as np
+from pathlib import Path
 
-download_path = '/home/wangtyu/datasets/CVUSA/'
-train_split = download_path + 'splits/train-19zl.csv'
-train_save_path = download_path + 'train/'
+
+download_path = Path('/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/')
+train_split = download_path / 'splits/train-19zl.csv'
+train_save_path = download_path / 'train'
 
 if not os.path.isdir(train_save_path):
     os.mkdir(train_save_path)

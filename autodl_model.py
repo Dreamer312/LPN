@@ -1485,12 +1485,12 @@ class UQPT_layer(nn.Module):
     def forward(self, lpn_query, stage3):
         bs = stage3.size(0)
         
-        # query_embed 复制bs分   4 bs c
+        #query_embed 复制bs分   4 bs c
         query_embed = self.region_embed.weight.unsqueeze(1).repeat(1, bs, 1)
         x = lpn_query + query_embed.transpose(1, 0)
         x = x + self.pos_embed
         
-        #x = lpn_query
+        x = lpn_query
         
         for i in range(self.depth):
             x = self.blocks[i](x, stage3)
@@ -1820,9 +1820,6 @@ class two_view_net_swin_infonce_plpn2(nn.Module):
         self.final_W = 16
         self.final_H_street = 8
         self.final_W_street = 32
-
-        # self.final_W_street = 40
-
         self.sqr = True # if the satellite image is square ring partition and the ground image is row partition, self.sqr is True. Otherwise it is False.
         configuration1 = SwinConfig(image_size=(128, 512), output_hidden_states=True)
         configuration2 = SwinConfig(image_size=(256, 256), output_hidden_states=True)
@@ -1872,10 +1869,6 @@ class two_view_net_swin_infonce_plpn2(nn.Module):
                 
                 #x1_stage3_concat = x1_stage4.transpose(2, 1).reshape(-1, self.feature_dim, int(self.final_W/2), int(self.final_H/2))
                 x1_stage3 = x1_output[3][3]
-
-                # print(f'x1_stage4 {x1_stage4.size()}')
-                # print(f"x1_stage3 {x1_stage3.size()}")
-                # assert(0)
                 x1_stage3_before_dsample = x1_hidden_before_dsample[2]
 
                 
@@ -1916,11 +1909,7 @@ class two_view_net_swin_infonce_plpn2(nn.Module):
                
                 x2_stage3 = x2_output[3][3]
                 x2_stage3_before_dsample = x2_hidden_before_dsample[2]
-
-                # print(f'x2_stage4 {x2_stage4.size()}')
-                # print(f"x2_stage3_before_dsample {x2_stage3_before_dsample.size()}")
-                # print(f"x2_stage3 {x2_stage3.size()}")
-                # assert(0)
+                
                 # global
                 y2_global_logits, y2_embedding = self.global_classifier(x2_stage4.mean(dim=1))
                 
@@ -1966,6 +1955,188 @@ class two_view_net_swin_infonce_plpn2(nn.Module):
         if not self.training:
             return torch.stack(y, dim=2)
         return y
+
+
+
+
+
+
+class PartLearner(nn.Module):
+    def __init__(self, dim, num_tokens_out=4):
+        super().__init__()
+        self.scale = dim ** -0.5
+        
+        self.region_token = nn.Parameter(torch.randn((num_tokens_out, dim)))
+        
+    def forward(self, x):
+        sim = (self.region_token @ x.transpose(-2, -1)) * self.scale 
+        attn = sim.softmax(dim=-1)
+        regions = attn @ x
+        return regions
+
+
+class two_view_UPQT_e2e(nn.Module):
+    def __init__(self, class_num, droprate, stride = 1, pool = 'avg', share_weight = False, VGG16=False, LPN=False, block=2):
+        super(two_view_UPQT_e2e, self).__init__()
+        self.feature_dim = 768
+        self.LPN = LPN
+        self.block = block
+        self.final_H = 16
+        self.final_W = 16
+        self.final_H_street = 8
+        self.final_W_street = 32
+        self.sqr = True # if the satellite image is square ring partition and the ground image is row partition, self.sqr is True. Otherwise it is False.
+        configuration1 = SwinConfig(image_size=(128, 512), output_hidden_states=True)
+        configuration2 = SwinConfig(image_size=(256, 256), output_hidden_states=True)
+        model1 = SwinModel.from_pretrained(pretrained_model_name_or_path='microsoft/swin-tiny-patch4-window7-224',
+                                            config=configuration2,
+                                            ignore_mismatched_sizes=True,
+                                            )
+        model2 = SwinModel.from_pretrained(pretrained_model_name_or_path='microsoft/swin-tiny-patch4-window7-224',
+                                            config=configuration1,
+                                            ignore_mismatched_sizes=True,
+                                            )
+        self.model_1 = model1
+        self.model_2 = model2
+        
+        self.upsample_layer = nn.Upsample(scale_factor=2, mode='bilinear')
+        self.channel_adapter1 = nn.Sequential(nn.Conv2d(self.feature_dim, int(self.feature_dim/2), kernel_size=1, bias=False),
+                                     nn.BatchNorm2d(int(self.feature_dim/2)),
+                                     nn.ReLU(inplace=True))
+        self.channel_adapter1.apply(weights_init_kaiming)
+
+        self.channel_adapter2 = nn.Sequential(nn.Conv2d(self.feature_dim, int(self.feature_dim/2), kernel_size=1, bias=False),
+                                nn.BatchNorm2d(int(self.feature_dim/2)),
+                                nn.ReLU(inplace=True))
+        self.channel_adapter2.apply(weights_init_kaiming)
+        
+        self.global_classifier = ClassBlock(self.feature_dim, class_num, droprate, return_f=True)
+        
+        
+        self.plpn = UQPT_layer(self.feature_dim, layer_depth=1, num_heads=12, part_num = self.block)
+        
+        # self.part_stage4_sate = ft_net_cvusa_LPN_R_swin_stage4(class_num, model=None, stride=stride, pool=pool, block=block)
+        # self.part_stage4_street = ft_net_cvusa_LPN_swin_stage4(class_num, model=None,stride = stride, pool = pool, block=block, row = self.sqr)
+        
+
+        self.parts = PartLearner(dim=self.feature_dim, num_tokens_out=block)
+
+
+        for i in range(self.block):
+            name = 'classifier'+str(i)
+            setattr(self, name, ClassBlock(768, class_num, droprate))
+                        
+
+    def forward(self, x1, x2):
+        if self.LPN:
+            if x1 is None:
+                y1_global_logits=y1_embedding=y1_s4_part_logits = None
+            else:
+                #torch.Size([150, 768, 4])
+                x1_output, x1_hidden_before_dsample = self.model_1(x1)
+                x1_stage4 = x1_output.last_hidden_state
+                
+                #x1_stage3_concat = x1_stage4.transpose(2, 1).reshape(-1, self.feature_dim, int(self.final_W/2), int(self.final_H/2))
+                x1_stage3 = x1_output[3][3]
+                x1_stage3_before_dsample = x1_hidden_before_dsample[2]
+
+                
+                # global
+                y1_global_logits, y1_embedding = self.global_classifier(x1_stage4.mean(dim=1))
+                
+                # print(x1_stage3_before_dsample.size())
+                # print(x1_stage3.size())
+                # torch.Size([32, 256, 384])
+                # torch.Size([32, 768, 4, 16])
+                
+                # # part
+                x1_stage3 = x1_stage3.transpose(2, 1).reshape(-1, self.feature_dim, int(self.final_H/2), int(self.final_W/2))
+                x1_stage3_before_dsample = x1_stage3_before_dsample.transpose(2, 1).reshape(-1, int(self.feature_dim/2), self.final_H, self.final_W)
+                x1_stage3 = self.upsample_layer(x1_stage3)
+                x1_stage3 = self.channel_adapter1(x1_stage3)   
+                x1_stage3_concat = torch.concat((x1_stage3, x1_stage3_before_dsample), dim=1)
+
+                # print(x1_stage3_before_dsample.size())
+                # print(x1_stage3_concat.size())
+                # torch.Size([32, 384, 8, 32])
+                # torch.Size([32, 768, 8, 32])
+                # assert(0)
+                B,C,H,W = x1_stage3_concat.size()
+                x1_stage3_concat = x1_stage3_concat.reshape(B,C,-1).transpose(2,1)
+
+                y1_s4_part = self.parts(x1_stage3_concat)
+                # y1_s4_part = y1_s4_part.transpose(2,1)
+                
+                y1_s4_part = self.plpn(y1_s4_part, x1_stage3_concat)
+                y1_s4_part_logits = self.part_classifier(y1_s4_part.transpose(2,1))
+
+
+            if x2 is None:
+                y2_global_logits=y2_embedding=y2_s4_part_logits = None
+            else:
+                x2_output, x2_hidden_before_dsample = self.model_2(x2)
+                x2_stage4 = x2_output.last_hidden_state
+               
+                x2_stage3 = x2_output[3][3]
+                x2_stage3_before_dsample = x2_hidden_before_dsample[2]
+                
+                # global
+                y2_global_logits, y2_embedding = self.global_classifier(x2_stage4.mean(dim=1))
+                
+                # # part
+                x2_stage3 = x2_stage3.transpose(2, 1).reshape(-1, self.feature_dim, int(self.final_H_street/2), int(self.final_W_street/2))
+                x2_stage3_before_dsample = x2_stage3_before_dsample.transpose(2, 1).reshape(-1, int(self.feature_dim/2), self.final_H_street, self.final_W_street)
+                x2_stage3 = self.upsample_layer(x2_stage3)
+                x2_stage3 = self.channel_adapter2(x2_stage3)   
+                x2_stage3_concat = torch.concat((x2_stage3, x2_stage3_before_dsample), dim=1)
+                
+                #x2_stage3_concat = x2_stage3
+                B,C,H,W = x2_stage3_concat.size()
+                x2_stage3_concat = x2_stage3_concat.reshape(B,C,-1).transpose(2,1)
+                y2_s4_part = self.parts(x2_stage3_concat)
+                
+                
+                y2_s4_part = self.plpn(y2_s4_part, x2_stage3_concat)                
+                y2_s4_part_logits = self.part_classifier(y2_s4_part.transpose(2,1))
+                
+            result = {'global_logits': (y1_global_logits, y2_global_logits),
+                      'global_embedding':(y1_embedding, y2_embedding),
+                      'part_logits': (y1_s4_part_logits, y2_s4_part_logits)
+                     }
+            
+            # result = {
+            #           'part_logits': (y1_s4_part_logits, y2_s4_part_logits)
+            #          }
+
+        
+        return result
+
+    def part_classifier(self, x):
+        part = {}
+        predict = {}
+        for i in range(self.block):
+            # part[i] = torch.squeeze(x[:,:,i])
+            part[i] = x[:,:,i].view(x.size(0),-1)
+            name = 'classifier'+str(i)
+            c = getattr(self, name)
+            predict[i] = c(part[i])
+        y = []
+        for i in range(self.block):
+            y.append(predict[i])
+        if not self.training:
+            return torch.stack(y, dim=2)
+        return y
+
+
+
+
+
+
+
+
+
+
+
 
 class two_view_net_swinB_infonce(nn.Module):
     def __init__(self, class_num, droprate, stride = 1, pool = 'avg', share_weight = False, VGG16=False, LPN=False, block=2):
