@@ -1,7 +1,7 @@
 from __future__ import print_function, division
 import argparse
 import torch
-import torch.backends.cudnn as cudnn
+# import torch.backends.cudnn as cudnn
 import torch.nn as nn
 from torch.optim import lr_scheduler
 from torchvision import transforms
@@ -13,7 +13,7 @@ from utils import save_network
 from types import SimpleNamespace
 from timm.optim.optim_factory import create_optimizer
 from torchmetrics import Accuracy
-from vigor_dataset import TrainDataloader
+from vigor_dataset_simple import TrainDataloader
 from torch.nn import functional as F
 import random
 from PIL import ImageFilter, ImageOps
@@ -25,7 +25,7 @@ from accelerate import Accelerator
 
 version = torch.__version__
 
-
+ 
 ######################################################################
 # Options
 # --------
@@ -81,7 +81,8 @@ def get_args_parser():
 def train_model(opt):
 
     accelerate = Accelerator(mixed_precision='fp16', log_with="wandb")
-    #accelerate.init_trackers("UniQT")
+    
+    accelerate.init_trackers("UniQT")
 
     if accelerate.is_main_process:
         dir_name = os.path.join('./model', opt.name)
@@ -95,9 +96,9 @@ def train_model(opt):
     data_dir = opt.data_dir
 
     transform_train_list_street = [
-    transforms.Resize((128, 512), interpolation=3),
+    transforms.Resize((320, 640), interpolation=3),
     transforms.Pad(opt.pad, padding_mode='edge'),
-    transforms.RandomCrop((128, 512)),
+    transforms.RandomCrop((320, 640)),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
@@ -105,21 +106,21 @@ def train_model(opt):
 
 
     transform_train_list_sate = [
-    transforms.Resize((opt.h, opt.w), interpolation=3),
+    transforms.Resize((320, 320), interpolation=3),
     transforms.Pad(opt.pad, padding_mode='edge'),
-    transforms.RandomCrop((opt.h, opt.w)),
+    transforms.RandomCrop((320, 320)),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]
     
-    transform_train_list_street = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.4),
+    transform_train_list_street = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.8),
                                     gray_scale(p=0.3),
                                     Solarization(p=0.2),
                                     GaussianBlur(p=0.3),
                                   ] + transform_train_list_street + [RandomErasing(probability=opt.erasing_p, mean=[0.0, 0.0, 0.0])]
     
-    transform_train_list_sate = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.4),
+    transform_train_list_sate = [transforms.RandomApply([transforms.ColorJitter(0.4,0.4,0.4)], p=0.8),
                                     gray_scale(p=0.3),
                                     Solarization(p=0.2),
                                     GaussianBlur(p=0.3),
@@ -140,26 +141,28 @@ def train_model(opt):
         'train_sate' : transforms.Compose(transform_train_list_sate),
         'val': transforms.Compose(transform_val_list)}
 
-    image_datasets = TrainDataloader(data_dir)
+    
+    image_datasets = TrainDataloader(data_dir, data_transforms['train_street'], data_transforms['train_sate'])
 
 
 
-    for data in tqdm(image_datasets):
-        None
-        # print()
-    assert(0)
+    # for data in tqdm(image_datasets):
+    #     None
+    #     # print()
+    # assert(0)
 
     dataloaders = torch.utils.data.DataLoader(image_datasets, batch_size=opt.batchsize,
-                                              shuffle=True, num_workers=9, pin_memory=True, drop_last=True)
+                                              shuffle=True, num_workers=8, pin_memory=False, drop_last=True)
 
-    class_names = image_datasets.classes
-    accelerate.print(f'there are {len(class_names)} IDs')
+    # class_names = image_datasets.classes
+    accelerate.print(f'there are {len(image_datasets)} IDs')
+    opt.nclasses = len(image_datasets)
 
     # ============ building networks ... ============
-    model = two_view_net_swin_infonce_plpn2(len(class_names), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
+    model = two_view_net_swin_infonce_plpn2(len(image_datasets), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
                                       LPN=True, block=opt.block)
 
-    accuracy = Accuracy(num_classes=len(class_names), task='multiclass').cuda()
+    accuracy = Accuracy(num_classes=len(image_datasets), task='multiclass').cuda()
     
     
     accelerate.print(model)
@@ -203,8 +206,6 @@ def train_model(opt):
     scheduler = lr_scheduler.StepLR(optimizer, step_size=80, gamma=0.1)
     
     #scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[80,120,160])
-
-
 
     model, criterion_class, infonce, optimizer, dataloaders = accelerate.prepare(model, criterion_class, infonce, optimizer, dataloaders)
 
@@ -437,13 +438,14 @@ def check_keywords_in_name(name, keywords=()):
 
 
 
-
-
 def one_LPN_output(outputs, labels, criterion, block):
     # part = {}
+
     sm = nn.Softmax(dim=1)
     num_part = block
     score = 0
+
+
     loss = 0
     for i in range(num_part):
         part = outputs[i]
@@ -487,6 +489,9 @@ def train_one_epoch(accelerate, model, epoch, criterion_class, infonce, optimize
         # sate_data = sate_data.cuda(non_blocking=True)
         # street_data = street_data.cuda(non_blocking=True)
         # all_label = all_label.cuda(non_blocking=True)
+
+        # print(all_label)
+        # assert(0)
         
         # zero the parameter gradients
         optimizer.zero_grad()
@@ -496,6 +501,9 @@ def train_one_epoch(accelerate, model, epoch, criterion_class, infonce, optimize
         y1_s4_logits, y2_s4_logits = result['global_logits']
         _, preds = torch.max(y1_s4_logits.data, 1)
         _, preds2 = torch.max(y2_s4_logits.data, 1)
+
+        # print(y1_s4_logits.size())
+        # print(all_label.size())
 
 
         loss_global = criterion_class(y1_s4_logits, all_label) + criterion_class(y2_s4_logits, all_label)
@@ -519,6 +527,7 @@ def train_one_epoch(accelerate, model, epoch, criterion_class, infonce, optimize
         #########################################
     
         y1_s4_res_logits, y2_s4_res_logits = result['part_logits']
+
 
         branch4_preds, branch4_loss = one_LPN_output(y1_s4_res_logits, all_label, criterion_class, opt.block)
         
@@ -563,7 +572,7 @@ def train_one_epoch(accelerate, model, epoch, criterion_class, infonce, optimize
         one_epoch_step += 1
 
     epoch_loss = running_loss / one_epoch_step
-    epoch_loss_main = running_loss_main / one_epoch_step
+    # epoch_loss_main = running_loss_main / one_epoch_step
     epoch_loss_branch4 = running_loss_branch4 / one_epoch_step
     epoch_infonce_loss = running_loss_infonce / one_epoch_step
     epoch_acc_sate = step_corrects_accu / one_epoch_step
@@ -586,24 +595,26 @@ def train_one_epoch(accelerate, model, epoch, criterion_class, infonce, optimize
     #     save_network(model, opt.name, epoch)
 
     if accelerate.is_main_process:  
-        if (epoch+1) == num_epochs:
+        if (epoch+1) == num_epochs: 
             unwrp_model = accelerate.unwrap_model(model)        
             save_network(unwrp_model, opt.name, epoch)
+        
+        if (epoch+1) % 10 == 0:
+            inter_epoch_path = os.path.join('./model',opt.name, f'epoch_{epoch}')
+            if not os.path.isdir(inter_epoch_path):
+                os.mkdir(inter_epoch_path)
+            accelerate.save_state(inter_epoch_path)
         
         each_epoch_path = os.path.join('./model',opt.name,'each_epoch')
         if not os.path.isdir(each_epoch_path):
             os.mkdir(each_epoch_path)
         accelerate.save_state(each_epoch_path)
+
         
-
-    
-
-
 
 
 if __name__ =='__main__':
-    #fix_random_seeds(114514)
+    # fix_random_seeds(114514)
     parser = get_args_parser()
     opt = parser.parse_args() 
-    opt.nclasses = 90618
     train_model(opt)

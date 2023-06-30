@@ -1816,16 +1816,24 @@ class two_view_net_swin_infonce_plpn2(nn.Module):
         self.feature_dim = 768
         self.LPN = LPN
         self.block = block
-        self.final_H = 16
-        self.final_W = 16
-        self.final_H_street = 8
-        self.final_W_street = 32
+        # self.final_H = 16
+        # self.final_W = 16
+        # self.final_H_street = 8
+        # self.final_W_street = 32
+
+        self.final_H = 20
+        self.final_W = 20
+        self.final_H_street = 20
+        self.final_W_street = 40
 
         # self.final_W_street = 40
 
         self.sqr = True # if the satellite image is square ring partition and the ground image is row partition, self.sqr is True. Otherwise it is False.
-        configuration1 = SwinConfig(image_size=(128, 512), output_hidden_states=True)
-        configuration2 = SwinConfig(image_size=(256, 256), output_hidden_states=True)
+        # configuration1 = SwinConfig(image_size=(128, 512), output_hidden_states=True)
+        # configuration2 = SwinConfig(image_size=(256, 256), output_hidden_states=True)
+
+        configuration1 = SwinConfig(output_hidden_states=True)
+        configuration2 = SwinConfig(output_hidden_states=True)
         model1 = SwinModel.from_pretrained(pretrained_model_name_or_path='microsoft/swin-tiny-patch4-window7-224',
                                             config=configuration2,
                                             ignore_mismatched_sizes=True,
@@ -1907,6 +1915,9 @@ class two_view_net_swin_infonce_plpn2(nn.Module):
                 y1_s4_part = self.plpn(y1_s4_part, x1_stage3_concat)
                 y1_s4_part_logits = self.part_classifier(y1_s4_part.transpose(2,1))
 
+                # for part_logits in y1_s4_part_logits:
+                #     print(f"part_logits {part_logits.size()}")
+
 
             if x2 is None:
                 y2_global_logits=y2_embedding=y2_s4_part_logits = None
@@ -1930,6 +1941,8 @@ class two_view_net_swin_infonce_plpn2(nn.Module):
                 x2_stage3 = self.upsample_layer(x2_stage3)
                 x2_stage3 = self.channel_adapter2(x2_stage3)   
                 x2_stage3_concat = torch.concat((x2_stage3, x2_stage3_before_dsample), dim=1)
+
+                # print(f"x2_stage3_concat {x2_stage3_concat.size()}")
                 
                 #x2_stage3_concat = x2_stage3
                 y2_s4_part = self.part_stage4_street(x2_stage3_concat)
@@ -1938,6 +1951,9 @@ class two_view_net_swin_infonce_plpn2(nn.Module):
                 y2_s4_part = y2_s4_part.transpose(2,1)
                 y2_s4_part = self.plpn(y2_s4_part, x2_stage3_concat)                
                 y2_s4_part_logits = self.part_classifier(y2_s4_part.transpose(2,1))
+
+                # for part_logits in y2_s4_part_logits:
+                #     print(f"y2_s4_part_logits {part_logits.size()}")
                 
             result = {'global_logits': (y1_global_logits, y2_global_logits),
                       'global_embedding':(y1_embedding, y2_embedding),
