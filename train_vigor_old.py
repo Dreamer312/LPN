@@ -8,7 +8,7 @@ from torchvision import transforms
 import time
 import os
 # os.environ['CUDA_LAUNCH_BLOCKING']='1'
-os.environ["WANDB_MODE"] = "disabled"
+# os.environ["WANDB_MODE"] = "disabled"
 from model import two_view_net_swin_infonce_plpn2, two_view_net_swinB_infonce, two_view_net_swin_infonce_region_cluster
 from utils import save_network
 from types import SimpleNamespace
@@ -22,10 +22,7 @@ from random_erasing import RandomErasing
 import yaml
 from tqdm import tqdm
 from accelerate import Accelerator
-
-import math
-
-from torch.optim.lr_scheduler import LambdaLR
+# torch.cuda.empty_cache()
 
 
 version = torch.__version__
@@ -53,7 +50,7 @@ def get_args_parser():
     parser.add_argument('--use_dense', action='store_true', help='use densenet121')
     parser.add_argument('--use_NAS', action='store_true', help='use NAS')
     parser.add_argument('--use_swin', action='store_true', help='use swin transformer 224*224')
-    parser.add_argument('--optimizer', default="AdamW", type=str, help="type of optimizer")
+    parser.add_argument('--optimizer', default="Adamw", type=str, help="type of optimizer")
     parser.add_argument('--use_vit', action='store_true', help='use vit_B_16 224*224')
     parser.add_argument('--swin_au_block', action='store_true', help='use swin block in au classifiers')
     parser.add_argument('--branch3_weight', default=0, type=float, help='branch3 loss weight')
@@ -76,6 +73,7 @@ def get_args_parser():
     parser.add_argument('--feature_dim', default=512, type=int, help='part feature dim')
     parser.add_argument('--backbone', default="swint", type=str, help='backbone')
     parser.add_argument('--dataset', default="vigor", type=str, help='dataset')
+
     parser.add_argument('--epoch', default=100, type=int, help='epoch number')
 
 
@@ -155,7 +153,7 @@ def train_model(opt):
 
 
     dataloaders = torch.utils.data.DataLoader(image_datasets, batch_size=opt.batchsize,
-                                              shuffle=True, num_workers=12, pin_memory=False, drop_last=True)
+                                              shuffle=True, num_workers=8, pin_memory=False, drop_last=True)
 
     # class_names = image_datasets.classes
     accelerate.print(f'there are {len(image_datasets)} IDs')
@@ -183,6 +181,7 @@ def train_model(opt):
     accelerate.print(f'number of params: {n_parameters//1000000} M')
 
     
+    
     num_epochs = opt.epoch
     start_epoch = 0
 
@@ -194,15 +193,12 @@ def train_model(opt):
     lr_skip_keywords = {"model_1", "model_2", "plpn"} #"model_4"
     wd_skip_keywords = {'absolute_pos_embed', 'relative_position_bias_table', 'norm', "pos_embed"}
 
-    if opt.optimizer == "SAM" or "AdamW":
-        parameters = set_wd_lr_normal(model, wd_skip_keywords, lr_skip_keywords, opt.lr, False)
-    else:
-        parameters = set_wd_lr_normal(model, wd_skip_keywords, lr_skip_keywords, opt.lr)
+    parameters = set_wd_lr_normal(model, wd_skip_keywords, lr_skip_keywords, opt.lr)
 
-    if opt.optimizer == "AdamW":
+    if opt.optimizer == "Adamw":
         args = SimpleNamespace()
         args.weight_decay = 0.05
-        args.opt = 'AdamW'
+        args.opt = 'adamw'
         args.lr = opt.lr
         args.momentum = 0.9
         optimizer = create_optimizer(args, parameters)
@@ -214,27 +210,18 @@ def train_model(opt):
         args.momentum = 0.9
         args.nesterov = True
         optimizer = create_optimizer(args, parameters)
-    else:
-        base_opt = torch.optim.AdamW
-        optimizer = SAM(parameters, base_opt, 2, True, lr=opt.lr, weight_decay=0.03)
 
     # =================FP 16 scaler====================
     #scaler = torch.cuda.amp.GradScaler()
 
     #=================scheduler =======================
     scheduler = lr_scheduler.StepLR(optimizer, step_size=80, gamma=0.1)
-
-    num_training_steps=(len(dataloaders) * num_epochs)
-    if opt.optimizer == "SAM" or "AdamW":
-        scheduler = WarmupCosineSchedule(optimizer, warmup_steps=0, t_total=num_training_steps)
-        
     
     #scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[80,120,160])
-    if opt.optimizer == "SAM" or "AdamW":
-        model, scheduler,criterion_class, infonce, optimizer, dataloaders = accelerate.prepare(model, scheduler,criterion_class, infonce, optimizer, dataloaders)
-    else:
-        model, criterion_class, infonce, optimizer, dataloaders = accelerate.prepare(model, criterion_class, infonce, optimizer, dataloaders)
-
+    resume =False
+    model, criterion_class, infonce, optimizer, dataloaders = accelerate.prepare(model, criterion_class, infonce, optimizer, dataloaders)
+    if resume:
+        accelerate.load_sate("/home/minghach/Data/CMH/LPN/model/vigor-swint-infonce-UniQT-accelerate-16/each_epoch")
 
     #########################################################
     since = time.time()
@@ -265,90 +252,6 @@ def fix_random_seeds(seed):
     print(f"seed is {seed}")
 
 
-
-
-
-class WarmupCosineSchedule(LambdaLR):
-    """ Linear warmup and then cosine decay.
-        Linearly increases learning rate from 0 to 1 over `warmup_steps` training steps.
-        Decreases learning rate from 1. to 0. over remaining `t_total - warmup_steps` steps following a cosine curve.
-        If `cycles` (default=0.5) is different from default, learning rate follows cosine function after warmup.
-    """
-    def __init__(self, optimizer, warmup_steps, t_total, cycles=.5, last_epoch=-1, min_lr=1e-6):
-        self.warmup_steps = warmup_steps
-        self.t_total = t_total
-        self.cycles = cycles
-        self.min_lr = min_lr
-        super(WarmupCosineSchedule, self).__init__(optimizer, self.lr_lambda, last_epoch=last_epoch)
-
-    def lr_lambda(self, step):
-        if step < self.warmup_steps:
-            return float(step) / float(max(1.0, self.warmup_steps))
-        # progress after warmup
-        progress = float(step - self.warmup_steps) / float(max(1, self.t_total - self.warmup_steps))
-        return max(self.min_lr, 0.5 * (1. + math.cos(math.pi * float(self.cycles) * 2.0 * progress)))
-    
-
-class SAM(torch.optim.Optimizer):
-    def __init__(self, params, base_optimizer, rho=0.05, adaptive=False, **kwargs):
-        assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
-
-        defaults = dict(rho=rho, adaptive=adaptive, **kwargs)
-        super(SAM, self).__init__(params, defaults)
-
-        self.base_optimizer = base_optimizer(self.param_groups, **kwargs)
-        self.param_groups = self.base_optimizer.param_groups
-        self.defaults.update(self.base_optimizer.defaults)
-
-    @torch.no_grad()
-    def first_step(self, zero_grad=False):
-        grad_norm = self._grad_norm()
-        for group in self.param_groups:
-            scale = group["rho"] / (grad_norm + 1e-12)
-
-            for p in group["params"]:
-                if p.grad is None: continue
-                self.state[p]["old_p"] = p.data.clone()
-                e_w = (torch.pow(p, 2) if group["adaptive"] else 1.0) * p.grad * scale.to(p)
-                p.add_(e_w)  # climb to the local maximum "w + e(w)"
-
-        if zero_grad: self.zero_grad()
-
-    @torch.no_grad()
-    def second_step(self, zero_grad=False):
-        for group in self.param_groups:
-            for p in group["params"]:
-                if p.grad is None: continue
-                p.data = self.state[p]["old_p"]  # get back to "w" from "w + e(w)"
-
-        self.base_optimizer.step()  # do the actual "sharpness-aware" update
-
-        if zero_grad: self.zero_grad()
-
-    @torch.no_grad()
-    def step(self, closure=None):
-        assert closure is not None, "Sharpness Aware Minimization requires closure, but it was not provided"
-        closure = torch.enable_grad()(closure)  # the closure should do a full forward-backward pass
-
-        self.first_step(zero_grad=True)
-        closure()
-        self.second_step()
-
-    def _grad_norm(self):
-        shared_device = self.param_groups[0]["params"][0].device  # put everything on the same device, in case of model parallelism
-        norm = torch.norm(
-                    torch.stack([
-                        ((torch.abs(p) if group["adaptive"] else 1.0) * p.grad).norm(p=2).to(shared_device)
-                        for group in self.param_groups for p in group["params"]
-                        if p.grad is not None
-                    ]),
-                    p=2
-               )
-        return norm
-
-    def load_state_dict(self, state_dict):
-        super().load_state_dict(state_dict)
-        self.base_optimizer.param_groups = self.param_groups
 
 
 ##############################################################################
@@ -503,7 +406,7 @@ class gray_scale(object):
 
 
 
-def set_wd_lr_normal(model, wd_skip_keywords=(), lr_skip_keywords=(), lr=0, lr_w=True):
+def set_wd_lr_normal(model, wd_skip_keywords=(), lr_skip_keywords=(), lr=0):
     backbone_has_decay = []
     backbone_no_decay = []
     others_has_decay = []
@@ -528,16 +431,10 @@ def set_wd_lr_normal(model, wd_skip_keywords=(), lr_skip_keywords=(), lr=0, lr_w
                 others_has_decay.append(param)
                 #print(f"others {name} has weight decay")
 
-    if lr_w:
-        return [{'params': backbone_has_decay, 'lr': lr * 0.1},
-                {'params': backbone_no_decay, 'lr': lr * 0.1, 'weight_decay': 0.},
-                {'params': others_has_decay},
-                {'params': others_no_decay, 'weight_decay': 0.}]
-    else:
-        return [{'params': backbone_has_decay, 'lr': lr },
-                {'params': backbone_no_decay, 'lr': lr , 'weight_decay': 0.},
-                {'params': others_has_decay},
-                {'params': others_no_decay, 'weight_decay': 0.}]
+    return [{'params': backbone_has_decay, 'lr': lr * 0.1},
+            {'params': backbone_no_decay, 'lr': lr * 0.1, 'weight_decay': 0.},
+            {'params': others_has_decay},
+            {'params': others_no_decay, 'weight_decay': 0.}]
 
 
 def check_keywords_in_name(name, keywords=()):
@@ -704,7 +601,7 @@ def train_one_epoch(accelerate, model, epoch, criterion_class, infonce, optimize
     accelerate.print(f"Satellite_Acc:{100*epoch_acc_sate:.4f}%    Street_Acc:{100*epoch_acc_street:.4f}%")
     accelerate.print(f"Satellite_LPN_Acc:{100*epoch_lpn_acc_sate:.4f}%    Street_LPN_Acc:{100*epoch_lpn_acc_street:.4f}%")
 
-   
+    
     scheduler.step()
 
     # if (epoch+1) % 20 == 0:
@@ -715,11 +612,18 @@ def train_one_epoch(accelerate, model, epoch, criterion_class, infonce, optimize
             unwrp_model = accelerate.unwrap_model(model)        
             save_network(unwrp_model, opt.name, epoch)
         
-        if (epoch+1) % 10 == 0:
+        # if (epoch+1) % 10 == 0:
+        #     inter_epoch_path = os.path.join('./model',opt.name, f'epoch_{epoch}')
+        #     if not os.path.isdir(inter_epoch_path):
+        #         os.mkdir(inter_epoch_path)
+        #     accelerate.save_state(inter_epoch_path)
+
+        if epoch+1 in [80, 85, 90]:
             inter_epoch_path = os.path.join('./model',opt.name, f'epoch_{epoch}')
             if not os.path.isdir(inter_epoch_path):
                 os.mkdir(inter_epoch_path)
             accelerate.save_state(inter_epoch_path)
+
         
         each_epoch_path = os.path.join('./model',opt.name,'each_epoch')
         if not os.path.isdir(each_epoch_path):
@@ -727,168 +631,6 @@ def train_one_epoch(accelerate, model, epoch, criterion_class, infonce, optimize
         accelerate.save_state(each_epoch_path)
 
         
-
-
-
-
-def train_one_epoch_SAM(accelerate, model, epoch, criterion_class, infonce, optimizer, accuracy, dataloaders, scheduler, num_epochs, opt):
-
-    running_loss = 0.0
-    running_loss_main = 0.0
-    running_loss_infonce = 0.0
-    running_loss_branch4 = 0.0
-    step_corrects_accu = 0.0
-    step_corrects2_accu = 0.0
-    step_corrects3_accu = 0.0
-    step_lpn_corrects_accu = 0.0
-    step_lpn_corrects2_accu = 0.0
-    step_lpn_corrects3_accu = 0.0
-    one_epoch_step = 0
-    running_loss_global = 0.0
-
-
-
-    for data in (tqdm(dataloaders) if accelerate.is_local_main_process else dataloaders):
-        step_corrects = 0.0
-        step_corrects2 = 0.0
-        step_corrects3 = 0.0
-        step_lpn_corrects = 0.0
-        step_lpn_corrects2 = 0.0
-        step_lpn_corrects3 = 0.0
-        loss_main = 0.0
-        
-
-        sate_data, street_data,  all_label = data
-        # sate_data = sate_data.cuda(non_blocking=True)
-        # street_data = street_data.cuda(non_blocking=True)
-        # all_label = all_label.cuda(non_blocking=True)
-
-        # print(all_label)
-        # assert(0)
-        
-        # zero the parameter gradients
-        optimizer.zero_grad()
-
-        
-        result = model(sate_data, street_data)
-        y1_s4_logits, y2_s4_logits = result['global_logits']
-        _, preds = torch.max(y1_s4_logits.data, 1)
-        _, preds2 = torch.max(y2_s4_logits.data, 1)
-
-        # print(y1_s4_logits.size())
-        # print(all_label.size())
-
-
-        loss_global = criterion_class(y1_s4_logits, all_label) + criterion_class(y2_s4_logits, all_label)
-
-        # print(f'loss_global')
-        # assert(0)
-        loss_main = loss_main + loss_global
-        #loss_main = torch.tensor([0.]).cuda()
-        
-        ################################
-        sate_embd, street_embd= result['global_embedding']
-        sate_embd_norm = F.normalize(sate_embd, dim=1)
-        street_embd_norm = F.normalize(street_embd, dim=1)
-        features = torch.cat([sate_embd_norm.unsqueeze(1), street_embd_norm.unsqueeze(1)], dim=1)
-        loss_infonce = infonce(features, all_label)
-        loss_main = loss_main + loss_infonce
-        ################################
-        
-        
-        
-        #########################################
-    
-        y1_s4_res_logits, y2_s4_res_logits = result['part_logits']
-
-
-        branch4_preds, branch4_loss = one_LPN_output(y1_s4_res_logits, all_label, criterion_class, opt.block)
-        
-        branch4_preds2, branch4_loss2 = one_LPN_output(y2_s4_res_logits, all_label, criterion_class, opt.block)
-        loss_branch4 = branch4_loss +  branch4_loss2
-        loss_branch4 = loss_branch4 #/ 3.0
-    
-        loss = loss_main + loss_branch4
-        #loss = loss_branch4
-        
-        # if one_epoch_step%100==0:
-        #     print(f"loss {loss.item() }")
-        #     print(f"loss_branch4 {loss_branch4.item() }")
-        #     print(f"loss_global {loss_global.item() }")
-
-        accelerate.backward(loss)
-        optimizer.step()
-
-        if opt.optimizer == "SAM" or "AdamW":
-            scheduler.step()
-
-        accelerate.log({"step loss": loss.item()})
-
-        running_loss += loss.item() 
-        running_loss_main += loss_main.item() 
-        running_loss_branch4 += loss_branch4.item()
-        running_loss_global += loss_global.item()
-        running_loss_infonce += loss_infonce.item() #torch.tensor([0.]).cuda()#
-        
-
-        step_corrects = accuracy(preds, all_label)      
-        step_corrects2 = accuracy(preds2, all_label)
-        step_lpn_corrects = accuracy(branch4_preds, all_label)  
-        step_lpn_corrects2 = accuracy(branch4_preds2, all_label)
-        
-       
-        step_corrects_accu += step_corrects
-        step_corrects2_accu += step_corrects2
-        step_corrects3_accu += step_corrects3
-        step_lpn_corrects_accu += step_lpn_corrects
-        step_lpn_corrects2_accu += step_lpn_corrects2
-        step_lpn_corrects3_accu += step_lpn_corrects3
-        
-       
-        one_epoch_step += 1
-
-    epoch_loss = running_loss / one_epoch_step
-    # epoch_loss_main = running_loss_main / one_epoch_step
-    epoch_loss_branch4 = running_loss_branch4 / one_epoch_step
-    epoch_infonce_loss = running_loss_infonce / one_epoch_step
-    epoch_acc_sate = step_corrects_accu / one_epoch_step
-    epoch_acc_street = step_corrects2_accu / one_epoch_step
-    epoch_lpn_acc_sate = step_lpn_corrects_accu / one_epoch_step
-    epoch_lpn_acc_street = step_lpn_corrects2_accu / one_epoch_step
-    epoch_loss_global = running_loss_global / one_epoch_step
-    
-    #wandb.log({"epoch_loss": epoch_loss})
-
-    accelerate.print(f'Loss: {epoch_loss:.4f}')
-    accelerate.print(f"epoch_loss_global: {epoch_loss_global:.4f},       epoch_loss_branch4: {epoch_loss_branch4:.4f}     epoch_infonce_sup: {epoch_infonce_loss} ")
-    accelerate.print(f"Satellite_Acc:{100*epoch_acc_sate:.4f}%    Street_Acc:{100*epoch_acc_street:.4f}%")
-    accelerate.print(f"Satellite_LPN_Acc:{100*epoch_lpn_acc_sate:.4f}%    Street_LPN_Acc:{100*epoch_lpn_acc_street:.4f}%")
-
-    if not opt.optimizer == "SAM" or "AdamW":
-        scheduler.step()
-
-    # if (epoch+1) % 20 == 0:
-    #     save_network(model, opt.name, epoch)
-
-    if accelerate.is_main_process:  
-        if (epoch+1) == num_epochs: 
-            unwrp_model = accelerate.unwrap_model(model)        
-            save_network(unwrp_model, opt.name, epoch)
-        
-        if (epoch+1) % 10 == 0:
-            inter_epoch_path = os.path.join('./model',opt.name, f'epoch_{epoch}')
-            if not os.path.isdir(inter_epoch_path):
-                os.mkdir(inter_epoch_path)
-            accelerate.save_state(inter_epoch_path)
-        
-        each_epoch_path = os.path.join('./model',opt.name,'each_epoch')
-        if not os.path.isdir(each_epoch_path):
-            os.mkdir(each_epoch_path)
-        accelerate.save_state(each_epoch_path)
-
-
-
-
 
 
 if __name__ =='__main__':

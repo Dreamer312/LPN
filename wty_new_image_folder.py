@@ -8,7 +8,7 @@ import os
 import torch
 from collections import defaultdict
 import random
-
+import json
 
 
 
@@ -181,6 +181,28 @@ def make_pair_dataset(dir, class_to_idx, extensions):
             for fname in sorted(fnames):
                 if has_file_allowed_extension(fname, extensions):
                     path = os.path.join(root, fname)
+                    item = (path, target, class_to_idx[target])
+                    images.append(item)
+    return images
+
+def make_pair_dataset_no_copies(dir, class_to_idx, extensions, first_images):
+    images = []
+    dir = os.path.expanduser(dir)
+    for target in sorted(os.listdir(dir)):
+        d = os.path.join(dir, target)
+        if not os.path.isdir(d):
+            continue
+
+        for root, _, fnames in sorted(os.walk(d)):
+            for fname in sorted(fnames):
+                if has_file_allowed_extension(fname, extensions):
+                    path = os.path.join(root, fname)
+                    # print(f"fnames {fnames}")
+                    # assert(0)
+                    # Check if the image is a first image in a duplicate pair
+                    if fname.split('.')[0] in first_images:
+                        print(f"image fname:{fname} is kicked out")
+                        continue  # Skip this image
                     item = (path, target, class_to_idx[target])
                     images.append(item)
     return images
@@ -676,7 +698,97 @@ class CVUSA_Data(Data.Dataset):
     def __len__(self):
         return len(self.imgs)
     
-    
+
+
+def make_pair_dataset_no_copies(dir, class_to_idx, extensions, first_images):
+    images = []
+    dir = os.path.expanduser(dir)
+    for target in sorted(os.listdir(dir)):
+        d = os.path.join(dir, target)
+        if not os.path.isdir(d):
+            continue
+
+        for root, _, fnames in sorted(os.walk(d)):
+            for fname in sorted(fnames):
+                if has_file_allowed_extension(fname, extensions):
+                    path = os.path.join(root, fname)
+                    # print(f"fnames {fnames}")
+                    # assert(0)
+                    # Check if the image is a first image in a duplicate pair
+                    if fname.split('.')[0] in first_images:
+                        print(f"image fname:{fname} is kicked out")
+                        continue  # Skip this image
+                    item = (path, target, class_to_idx[target])
+                    images.append(item)
+    return images
+
+class CVUSA_Data_no_copies(Data.Dataset):
+    def __init__(self, root, street_transform = None, sate_transform = None, loader = default_loader, view='/satellite/'):
+        sat_root = root + view
+        classes, class_to_idx = find_classes(sat_root)
+        IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif']
+        # imgs = make_pair_dataset(sat_root, class_to_idx, IMG_EXTENSIONS)
+
+        with open("duplicate_sat.json", "r") as file:
+            duplicates_sat_data = json.load(file)
+
+        skip_images = [pair[0].split('/')[-1].split('.')[0] for pair in duplicates_sat_data.values()]
+
+        imgs = make_pair_dataset_no_copies(sat_root, class_to_idx, IMG_EXTENSIONS, skip_images)
+
+
+        if len(imgs) == 0:
+            raise(RuntimeError("Found 0 images in subfolders of: " + root + "\n"
+                               "Supported image extensions are: " + ",".join(IMG_EXTENSIONS)))
+
+        self.root = root
+        self.imgs = imgs
+        self.classes = classes
+        self.class_to_idx = class_to_idx
+        self.street_transform = street_transform
+        self.sate_transform = sate_transform
+        self.loader = loader
+        
+    def _get_pair_sample(self, root, _cls):
+        img_path = []
+        folder_root = root + str(_cls)
+        # print(f"folder_root {folder_root}")
+        assert os.path.isdir(folder_root), 'no pair sat image'
+        for file_name in os.listdir(folder_root):
+            img_path.append(folder_root + '/' + file_name)
+        # rand = np.random.permutation(len(img_path))
+        # tmp_index = rand[0]
+        result_path = img_path[0]
+        # print(f"result_path {result_path}")
+        # assert(0)
+        return result_path
+
+    def __getitem__(self, index):
+            """
+            index (int): Index
+        Returns:tuple: (image, target) where target is class_index of the target class.
+            """
+            #street
+            path, _cls, target = self.imgs[index]
+            # print(f"_cls {_cls}")
+            # assert(0)
+            #street_image = self.loader(path)
+            sate_image = self.loader(path)
+            if self.sate_transform is not None:
+                sate_image = self.sate_transform(sate_image)
+            
+            # Sate
+            street_root = self.root + '/street/'
+            street_path = self._get_pair_sample(street_root, _cls)
+            street_image = self.loader(street_path)
+            if self.street_transform is not None:
+                street_image = self.street_transform(street_image)
+            
+            return sate_image, street_image, index
+
+    def __len__(self):
+        return len(self.imgs)
+
     
     
 class CVACT_Data(Data.Dataset):

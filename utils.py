@@ -3,7 +3,7 @@ import torch
 import yaml
 import torch.nn as nn
 # import parser
-from model import ft_net, two_view_net, three_view_net, two_view_net_swin, two_view_net_swin_infonce, two_view_net_swinB_infonce, two_view_net_swin_infonce_plpn, two_view_net_swin_infonce_plpn2
+from model import ft_net, two_view_net_swin_infonce_region_cluster, two_view_net, three_view_net, two_view_net_swin, two_view_net_swin_infonce, two_view_net_swinB_infonce, two_view_net_swin_infonce_plpn, two_view_net_swin_infonce_plpn2
 
 def make_weights_for_balanced_classes(images, nclasses):
     count = [0] * nclasses
@@ -113,7 +113,10 @@ def load_network(name, opt):
             model = three_view_net(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16 = opt.use_vgg16)
 
     #model = two_view_net_swin(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16 = opt.use_vgg16, LPN = True, block=opt.block)
-    model = two_view_net_swin_infonce_plpn2(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, LPN = True, block=opt.block)
+    #model = two_view_net_swin_infonce_region_cluster(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, LPN = True, block=opt.block)
+    model = two_view_net_swin_infonce_region_cluster(opt.nclasses, droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
+                                      LPN=True, block=opt.block, model=opt.backbone, feature_dim=opt.feature_dim, dataset=opt.dataset)
+
     # load model
     if isinstance(epoch, int):
         save_filename = 'net_%03d.pth'% epoch

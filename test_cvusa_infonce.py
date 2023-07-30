@@ -60,6 +60,13 @@ opt.views = config['views']
 opt.LPN = True
 opt.block = config['block']
 
+
+opt.feature_dim = config["feature_dim"] 
+opt.backbone= config["backbone"]
+opt.dataset= config["dataset"]
+
+
+
 if 'h' in config:
     opt.h = config['h']
     opt.w = config['w']
@@ -167,7 +174,7 @@ def which_view(name):
         print('unknown view')
     return -1
 
-def extract_feature(model,dataloaders, view_index = 1, dim=512):
+def extract_feature(model,dataloaders, view_index = 1, dim=opt.feature_dim):
     features = torch.FloatTensor()
     count = 0
     for data in dataloaders:

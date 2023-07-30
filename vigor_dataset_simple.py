@@ -5,10 +5,10 @@ import numpy as np
 import random
 
 class TrainDataloader(Dataset):
-    def __init__(self, dir, street_transform, sate_transform):
+    def __init__(self, dir, street_transform, sate_transform, same_area):
 
         self.root = dir#'/data/jeff-Dataset/CV-dataset'
-        self.same_area = False #True#False
+        self.same_area = same_area #True#False
         label_root = 'splits__corrected'  #注意是双横杠
 
         self.street_transform = street_transform
@@ -94,10 +94,10 @@ class TrainDataloader(Dataset):
 
 
 class TestDataloader_grd(Dataset):
-    def __init__(self, dir, transforms):
+    def __init__(self, dir, transforms, same_area):
         self.root = dir
         self.polar = 0#args.polar
-        self.same_area =True# args.same_argsTrue#False#
+        self.same_area = same_area# args.same_argsTrue#False#
         #label_root = 'splits'
         label_root = 'splits__corrected'
         #mode = 'train_SAFA_CVM-loss-same'
@@ -135,7 +135,7 @@ class TestDataloader_grd(Dataset):
         for city in self.test_city_list:
             # load test panorama list
             test_label_fname = os.path.join(self.root, label_root, city, 'same_area_balanced_test__corrected.txt'
-            if self.same_area else 'pano_label_balanced.txt')
+            if self.same_area else 'pano_label_balanced__corrected.txt')
             with open(test_label_fname, 'r') as file:
                 for line in file.readlines():
                     data = np.array(line.split(' '))
@@ -178,10 +178,10 @@ class TestDataloader_grd(Dataset):
 
 
 class TestDataloader_sat(Dataset):
-    def __init__(self, dir, transforms):
+    def __init__(self, dir, transforms, same_area):
         self.root = dir
         self.aug = False
-        self.same_area = True#args.same_args#False#
+        self.same_area = same_area #True#args.same_args#False#
         #label_root = 'splits'
         label_root = 'splits__corrected'
 

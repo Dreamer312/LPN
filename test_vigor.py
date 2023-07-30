@@ -59,6 +59,10 @@ for str_id in str_ids:
     if id >=0:
         gpu_ids.append(id)
 
+opt.feature_dim = config["feature_dim"] 
+opt.backbone= config["backbone"]
+opt.dataset= config["dataset"]
+
 
 # set gpu ids
 if len(gpu_ids)>0:
@@ -82,32 +86,38 @@ data_transforms_street = transforms.Compose([
 
 data_dir = test_dir
 
+same_area = config['same_area']
+print(f"same_area {same_area}")
 image_datasets = {}
-image_datasets['satellite'] = TestDataloader_sat(test_dir, data_transforms_sat)
-image_datasets['street'] = TestDataloader_grd(test_dir, data_transforms_street)
+image_datasets['satellite'] = TestDataloader_sat(test_dir, data_transforms_sat, same_area)
+image_datasets['street'] = TestDataloader_grd(test_dir, data_transforms_street, same_area)
 
 # dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.batchsize,
 #                                             shuffle=False, num_workers=9) for x in ['satellite','street']}
 
 dataloaders = {}
 dataloaders['satellite'] = torch.utils.data.DataLoader(image_datasets['satellite'],
-                                                       batch_size=360,
+                                                       batch_size=320,
                                                        shuffle=False, 
                                                        num_workers=9
                                                        )
 
 dataloaders['street'] = torch.utils.data.DataLoader(image_datasets['street'],
-                                                       batch_size=200,
+                                                       batch_size=160,
                                                        shuffle=False, 
                                                        num_workers=9
                                                        )
 
-dict_inter = torch.load("/home/minghach/Data/CMH/LPN/model/vigor-swint-infonce-UniQT-accelerate-1/99/pytorch_model.bin")
 
 model, _, epoch = load_network(opt.name, opt)
 
-msg = model.load_state_dict(dict_inter)
-print(msg)
+
+
+# actual_weight = "/home/minghach/Data/CMH/LPN/model/vigor-swint-infonce-UniQT-accelerate-16/epoch_89/pytorch_model.bin"
+# dict_inter = torch.load(actual_weight)
+# msg = model.load_state_dict(dict_inter)
+# print(msg)
+# print(actual_weight)
 
 if opt.LPN:
     print('use LPN')
@@ -190,8 +200,9 @@ with torch.no_grad():
 
 print('compute accuracy')
 
-    
-accuracy = 0.0
+
+# Initialize metrics
+recall_at_1_percent = 0.0
 accuracy_top1 = 0.0
 accuracy_top5 = 0.0
 accuracy_top10 = 0.0
@@ -199,37 +210,40 @@ accuracy_top100 = 0.0
 accuracy_hit = 0.0
 
 data_amount = 0.0
+
+# Load precomputed descriptors
 sat_global_descriptor = np.load("./vigor_sat.npy", allow_pickle=True)
 grd_global_descriptor = np.load("./vigor_street.npy", allow_pickle=True)
-    
-dist_array = 2 - 2 * np.matmul(grd_global_descriptor, sat_global_descriptor.T)
 
+# Compute pairwise cosine distance
+dist_array = 2 - 2 * np.matmul(grd_global_descriptor, sat_global_descriptor.T)
 print(dist_array.shape)
 
+# Define the top-k parameters
 top1_percent = int(dist_array.shape[1] * 0.01) + 1
 top1 = 1
 top5 = 5
 top10 = 10
 top100 = 100
 
+# For each image in the ground dataset
 for i in range(dist_array.shape[0]):
-    #gt_dist = dist_array[i, test_loader_grd.dataset.test_label[i][0]] # positive sat
-
+    # Get the distance of the ground truth match
     gt_dist = dist_array[i, dataloaders['street'].dataset.test_label[i][0]]
-    
 
+    # Get the predicted rank of the ground truth match
     prediction = np.sum(dist_array[i, :] < gt_dist)
 
+    # Create a mask that excludes the semi-positive matches
     dist_temp = np.ones(dist_array[i, :].shape[0])
-    
-    #dist_temp[test_loader_grd.dataset.test_label[i][1:]] = 0 # cover semi-positive sat
-
     dist_temp[dataloaders['street'].dataset.test_label[i][1:]] = 0
-    
+
+    # Get the predicted rank of the ground truth match, excluding semi-positive matches
     prediction_hit = np.sum((dist_array[i, :] < gt_dist) * dist_temp)
 
+    # Update the metrics
     if prediction < top1_percent:
-        accuracy += 1.0
+        recall_at_1_percent += 1.0
     if prediction < top1:
         accuracy_top1 += 1.0
     if prediction < top5:
@@ -240,14 +254,79 @@ for i in range(dist_array.shape[0]):
         accuracy_top100 += 1.0
     if prediction_hit < top1:
         accuracy_hit += 1.0
+
     data_amount += 1.0
 
-accuracy /= data_amount
+# Compute the final metrics
+recall_at_1_percent /= data_amount
 accuracy_top1 /= data_amount
 accuracy_top5 /= data_amount
 accuracy_top10 /= data_amount
 accuracy_top100 /= data_amount
 accuracy_hit /= data_amount
 
-print('accuracy = %.2f%% , top1: %.2f%%, top5: %.2f%%, top10: %.2f%%, top100: %.2f%%,hit_rate: %.2f%%' % (
-            accuracy * 100.0, accuracy_top1 * 100.0, accuracy_top5 * 100.0, accuracy_top10 * 100.0, accuracy_top100 * 100.0, accuracy_hit * 100.0))
+print('Recall@1%%: %.2f%%, Top1: %.2f%%, Top5: %.2f%%, Top10: %.2f%%, Top100: %.2f%%, Hit rate: %.2f%%' % (
+    recall_at_1_percent * 100.0, accuracy_top1 * 100.0, accuracy_top5 * 100.0, accuracy_top10 * 100.0, accuracy_top100 * 100.0, accuracy_hit * 100.0))
+
+
+    
+# accuracy = 0.0
+# accuracy_top1 = 0.0
+# accuracy_top5 = 0.0
+# accuracy_top10 = 0.0
+# accuracy_top100 = 0.0
+# accuracy_hit = 0.0
+
+# data_amount = 0.0
+# sat_global_descriptor = np.load("./vigor_sat.npy", allow_pickle=True)
+# grd_global_descriptor = np.load("./vigor_street.npy", allow_pickle=True)
+    
+# dist_array = 2 - 2 * np.matmul(grd_global_descriptor, sat_global_descriptor.T)
+
+# print(dist_array.shape)
+
+# top1_percent = int(dist_array.shape[1] * 0.01) + 1
+# top1 = 1
+# top5 = 5
+# top10 = 10
+# top100 = 100
+
+# for i in range(dist_array.shape[0]):
+#     #gt_dist = dist_array[i, test_loader_grd.dataset.test_label[i][0]] # positive sat
+
+#     gt_dist = dist_array[i, dataloaders['street'].dataset.test_label[i][0]]
+    
+
+#     prediction = np.sum(dist_array[i, :] < gt_dist)
+
+#     dist_temp = np.ones(dist_array[i, :].shape[0])
+    
+#     #dist_temp[test_loader_grd.dataset.test_label[i][1:]] = 0 # cover semi-positive sat
+
+#     dist_temp[dataloaders['street'].dataset.test_label[i][1:]] = 0
+    
+#     prediction_hit = np.sum((dist_array[i, :] < gt_dist) * dist_temp)
+
+#     if prediction < top1_percent:
+#         accuracy += 1.0
+#     if prediction < top1:
+#         accuracy_top1 += 1.0
+#     if prediction < top5:
+#         accuracy_top5 += 1.0
+#     if prediction < top10:
+#         accuracy_top10 += 1.0
+#     if prediction < top100:
+#         accuracy_top100 += 1.0
+#     if prediction_hit < top1:
+#         accuracy_hit += 1.0
+#     data_amount += 1.0
+
+# accuracy /= data_amount
+# accuracy_top1 /= data_amount
+# accuracy_top5 /= data_amount
+# accuracy_top10 /= data_amount
+# accuracy_top100 /= data_amount
+# accuracy_hit /= data_amount
+
+# print('accuracy = %.2f%% , top1: %.2f%%, top5: %.2f%%, top10: %.2f%%, top100: %.2f%%,hit_rate: %.2f%%' % (
+#             accuracy * 100.0, accuracy_top1 * 100.0, accuracy_top5 * 100.0, accuracy_top10 * 100.0, accuracy_top100 * 100.0, accuracy_hit * 100.0))

@@ -8,13 +8,14 @@ from torchvision import datasets, transforms
 import time
 import os
 # os.environ['CUDA_LAUNCH_BLOCKING']='1'
-from model import two_view_net_swin_infonce_plpn2
+os.environ["WANDB_MODE"]="disabled"
+from model import two_view_net_swin_infonce_plpn2, two_view_net_swin_infonce_region_cluster
 from utils import update_average, load_network, save_network
 import wandb
 from types import SimpleNamespace
 from timm.optim.optim_factory import create_optimizer
 from torchmetrics import Accuracy
-from wty_new_image_folder import CVUSA_Data
+from wty_new_image_folder import CVUSA_Data, CVUSA_Data_no_copies
 from torch.nn import functional as F
 import random
 from PIL import ImageFilter, ImageOps
@@ -73,6 +74,10 @@ def get_args_parser():
     parser.add_argument('--fp16', action='store_true',
                         help='use float16 instead of float32, which will save about 50% memory')
     parser.add_argument('--block', default=6, type=int, help='the num of block')
+    parser.add_argument('--feature_dim', default=512, type=int, help='part feature dim')
+    parser.add_argument('--backbone', default="swint", type=str, help='backbone')
+    parser.add_argument('--dataset', default="vigor", type=str, help='dataset')
+    parser.add_argument('--epoch', default=100, type=int, help='epoch number')
 
     return parser
 
@@ -84,15 +89,6 @@ def train_model(opt):
 
     accelerate = Accelerator(mixed_precision='fp16', log_with="wandb")
     accelerate.init_trackers("UniQT")
-
-    if accelerate.is_main_process:
-        dir_name = os.path.join('./model', opt.name)
-        if not os.path.isdir(dir_name):
-            os.mkdir(dir_name)
-
-        # save opts
-        with open('%s/opts.yaml' % dir_name, 'w') as fp:
-            yaml.dump(vars(opt), fp, default_flow_style=False)
 
     data_dir = opt.data_dir
 
@@ -150,19 +146,35 @@ def train_model(opt):
         'train_sate' : transforms.Compose(transform_train_list_sate),
         'val': transforms.Compose(transform_val_list)}
 
-    image_datasets = CVUSA_Data(data_dir, data_transforms['train_street'], data_transforms['train_sate'])
+
+    #image_datasets = CVUSA_Data(data_dir, data_transforms['train_street'], data_transforms['train_sate'])
+    image_datasets = CVUSA_Data_no_copies(data_dir, data_transforms['train_street'], data_transforms['train_sate'])
 
     dataloaders = torch.utils.data.DataLoader(image_datasets, batch_size=opt.batchsize,
                                               shuffle=True, num_workers=9, pin_memory=True, drop_last=True)
 
-    class_names = image_datasets.classes
-    accelerate.print(f'there are {len(class_names)} IDs')
+    class_numbers = len(image_datasets)
+    opt.nclasses = class_numbers
+    accelerate.print(f'there are {class_numbers} IDs')
+
+    if accelerate.is_main_process:
+        dir_name = os.path.join('./model', opt.name)
+        if not os.path.isdir(dir_name):
+            os.mkdir(dir_name)
+
+        # save opts
+        with open('%s/opts.yaml' % dir_name, 'w') as fp:
+            yaml.dump(vars(opt), fp, default_flow_style=False)
+
 
     # ============ building networks ... ============
-    model = two_view_net_swin_infonce_plpn2(len(class_names), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
-                                      LPN=True, block=opt.block)
+    num_epochs = opt.epoch
+    start_epoch = 0
 
-    accuracy = Accuracy(num_classes=len(class_names), task='multiclass').cuda()
+    model = two_view_net_swin_infonce_region_cluster(class_numbers, droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
+                                      LPN=True, block=opt.block, model=opt.backbone, feature_dim=opt.feature_dim, dataset=opt.dataset, epoch=num_epochs)
+
+    accuracy = Accuracy(num_classes=class_numbers, task='multiclass').cuda()
     
     
     accelerate.print(model)
@@ -170,8 +182,7 @@ def train_model(opt):
     accelerate.print(f'number of params: {n_parameters//1000000} M')
 
     
-    num_epochs = 200
-    start_epoch = 0
+
 
     #============= Loss ===============================
     criterion_class = nn.CrossEntropyLoss()
@@ -592,6 +603,13 @@ def train_one_epoch(accelerate, model, epoch, criterion_class, infonce, optimize
         if (epoch+1) == num_epochs:
             unwrp_model = accelerate.unwrap_model(model)        
             save_network(unwrp_model, opt.name, epoch)
+
+
+        if epoch+1 in [80, 90, 100, 120, 150]:
+            inter_epoch_path = os.path.join('./model',opt.name, f'epoch_{epoch}')
+            if not os.path.isdir(inter_epoch_path):
+                os.mkdir(inter_epoch_path)
+            accelerate.save_state(inter_epoch_path)
         
         each_epoch_path = os.path.join('./model',opt.name,'each_epoch')
         if not os.path.isdir(each_epoch_path):
@@ -606,7 +624,11 @@ def train_one_epoch(accelerate, model, epoch, criterion_class, infonce, optimize
 
 if __name__ =='__main__':
     #fix_random_seeds(114514)
+    # parser = get_args_parser()
+    # opt = parser.parse_args() 
+    # opt.nclasses = 35532
+    # train_model(opt)
+
     parser = get_args_parser()
     opt = parser.parse_args() 
-    opt.nclasses = 35532
     train_model(opt)

@@ -139,11 +139,7 @@ class TrainDataloader(Dataset):
         
         return x, y
         
-    def __len__(self):
-        return len(self.train_list)
-
-    # avoid sampling overlap images
-    def check_overlap(self, id_list, idx):
+    def __ck_overlap(self, id_list, idx):
         output = True
         sat_idx = self.train_label[idx]
         for id in id_list:
@@ -153,7 +149,11 @@ class TrainDataloader(Dataset):
                     output = False
                     return output
 
-        return output
+        return outputlen__(self):
+        return len(self.train_list)
+
+    # avoid sampling overlap images
+    def che
 
 class TestDataloader_grd(Dataset):
     def __init__(self, args):
