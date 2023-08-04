@@ -445,28 +445,140 @@
 
 
 #   SwinB 512
+# # ########################################################################
+# #export CUDA_VISIBLE_DEVICES='0' 
+# accelerate launch train_vigor_old.py \
+#  --name='vigor-swint-infonce-UniQT-accelerate-17' \
+#  --data_dir='/home/minghach/Data/CMH/LPN/dataset/vigor' \
+#  --erasing_p=0.5 \
+#  --block=9 \
+#  --same_area \
+#  --h=320 \
+#  --w=320 \
+#  --droprate=0.75 \
+#  --lr=0.02 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --feature_dim=512 \
+#  --backbone="swinb" \
+#  --dataset="vigor" \
+#  --epoch=40
+
+
+#  python test_vigor.py \
+# --name='vigor-swint-infonce-UniQT-accelerate-17' \
+# --test_dir='/home/minghach/Data/CMH/LPN/dataset/vigor' \
+# --gpu_ids='0' \
+# # # #########################################################################
+
+
+# # ########################################################################
+# #export CUDA_VISIBLE_DEVICES='0' 
+# accelerate launch train_vigor_old.py \
+#  --name='vigor-swint-infonce-UniQT-accelerate-18' \
+#  --data_dir='/home/minghach/Data/CMH/LPN/dataset/vigor' \
+#  --erasing_p=0.3 \
+#  --block=9 \
+#  --same_area \
+#  --h=320 \
+#  --w=320 \
+#  --droprate=0.75 \
+#  --lr=0.1 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --feature_dim=512 \
+#  --backbone="swint" \
+#  --dataset="vigor" \
+#  --epoch=100
+
+
+#  python test_vigor.py \
+# --name='vigor-swint-infonce-UniQT-accelerate-18' \
+# --test_dir='/home/minghach/Data/CMH/LPN/dataset/vigor' \
+# --gpu_ids='0' \
+# # # #########################################################################
+
+
+#cosine atten+
+# ########################################################################
+#export CUDA_VISIBLE_DEVICES='0' 
+# accelerate launch train_vigor_old.py \
+#  --name='vigor-swint-infonce-UniQT-accelerate-19' \
+#  --data_dir='/home/minghach/Data/CMH/LPN/dataset/vigor' \
+#  --erasing_p=0.3 \
+#  --block=9 \
+#  --same_area \
+#  --h=320 \
+#  --w=320 \
+#  --droprate=0.75 \
+#  --lr=0.1 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --feature_dim=512 \
+#  --backbone="swint" \
+#  --dataset="vigor" \
+#  --epoch=100
+
+
+#  python test_vigor.py \
+# --name='vigor-swint-infonce-UniQT-accelerate-19' \
+# --test_dir='/home/minghach/Data/CMH/LPN/dataset/vigor' \
+# --gpu_ids='0' \
+# # #########################################################################
+
+
+
+#cosine atten+
+# # ########################################################################
+# #export CUDA_VISIBLE_DEVICES='0' 
+# accelerate launch train_vigor_old.py \
+#  --name='vigor-swint-infonce-UniQT-accelerate-20' \
+#  --data_dir='/home/minghach/Data/CMH/LPN/dataset/vigor' \
+#  --erasing_p=0.3 \
+#  --block=4 \
+#  --same_area \
+#  --h=320 \
+#  --w=320 \
+#  --droprate=0.75 \
+#  --lr=0.1 \
+#  --optimizer='SGD' \
+#  --batchsize=32 \
+#  --feature_dim=512 \
+#  --backbone="swint" \
+#  --dataset="vigor" \
+#  --epoch=100
+
+
+#  python test_vigor.py \
+# --name='vigor-swint-infonce-UniQT-accelerate-20' \
+# --test_dir='/home/minghach/Data/CMH/LPN/dataset/vigor' \
+# --gpu_ids='0' \
+# # # #########################################################################
+
+
+
 # ########################################################################
 #export CUDA_VISIBLE_DEVICES='0' 
 accelerate launch train_vigor_old.py \
- --name='vigor-swint-infonce-UniQT-accelerate-17' \
+ --name='vigor-swint-infonce-UniQT-accelerate-21' \
  --data_dir='/home/minghach/Data/CMH/LPN/dataset/vigor' \
- --erasing_p=0.5 \
+ --erasing_p=0.3 \
  --block=9 \
  --same_area \
  --h=320 \
  --w=320 \
  --droprate=0.75 \
- --lr=0.02 \
+ --lr=0.1 \
  --optimizer='SGD' \
  --batchsize=32 \
- --feature_dim=512 \
- --backbone="swinb" \
+ --class_dim=512 \
+ --backbone="swint" \
  --dataset="vigor" \
- --epoch=40
+ --epoch=100
 
 
  python test_vigor.py \
---name='vigor-swint-infonce-UniQT-accelerate-17' \
+--name='vigor-swint-infonce-UniQT-accelerate-21' \
 --test_dir='/home/minghach/Data/CMH/LPN/dataset/vigor' \
 --gpu_ids='0' \
 # # #########################################################################

@@ -236,6 +236,21 @@ def get_id(img_path):
 print('-------test-----------')
 
 model, _, epoch = load_network(opt.name, opt)
+
+
+
+
+
+
+
+actual_weight = "/home/minghach/Data/CMH/LPN/model/cvusa-swint-infonce-UQPT-accelerate-6/epoch_119/pytorch_model.bin"
+dict_inter = torch.load(actual_weight)
+msg = model.load_state_dict(dict_inter)
+print(msg)
+print(actual_weight)
+
+
+
 if opt.LPN:
     print('use LPN')
     # model = two_view_net_test(model)

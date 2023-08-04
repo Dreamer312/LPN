@@ -119,8 +119,36 @@
 
 # ConvFFN+no duplicate
 ########################################################################
+# accelerate launch train_cvusa_accelerate.py \
+#  --name='cvusa-swint-infonce-UQPT-accelerate-6' \
+#  --data_dir='/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/train' \
+#  --erasing_p=0.5 \
+#  --block=9 \
+#  --droprate=0.75 \
+#  --h=256 \
+#  --w=256 \
+#  --lr=0.2 \
+#  --optimizer='SGD' \
+#  --batchsize=62 \
+#  --backbone="swint" \
+#  --dataset="cvusa" \
+#  --epoch=200
+
+#  python test_cvusa_infonce.py \
+# --name='cvusa-swint-infonce-UQPT-accelerate-6' \
+# --test_dir='/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/val' \
+# --batchsize=512 \
+# --gpu_ids='1' \
+#########################################################################
+
+
+
+
+
+# ConvFFN+no duplicate+dropkey+cosine atten
+########################################################################
 accelerate launch train_cvusa_accelerate.py \
- --name='cvusa-swint-infonce-UQPT-accelerate-6' \
+ --name='cvusa-swint-infonce-UQPT-accelerate-7' \
  --data_dir='/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/train' \
  --erasing_p=0.5 \
  --block=9 \
@@ -135,7 +163,7 @@ accelerate launch train_cvusa_accelerate.py \
  --epoch=200
 
  python test_cvusa_infonce.py \
---name='cvusa-swint-infonce-UQPT-accelerate-6' \
+--name='cvusa-swint-infonce-UQPT-accelerate-7' \
 --test_dir='/home/minghach/Data/CMH/LPN/dataset/cvusa/CVUSA_ori/val' \
 --batchsize=512 \
 --gpu_ids='1' \

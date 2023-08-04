@@ -65,6 +65,11 @@ if 'h' in config:
     opt.h = config['h']
     opt.w = config['w']
 
+
+opt.feature_dim = config["feature_dim"] 
+opt.backbone= config["backbone"]
+opt.dataset= config["dataset"]
+
 if 'nclasses' in config: # tp compatible with old config files
     opt.nclasses = config['nclasses']
 else: 
@@ -131,7 +136,7 @@ data_dir = test_dir
 if opt.multi:
     image_datasets = {x: datasets.ImageFolder( os.path.join(data_dir,x) ,data_transforms) for x in ['gallery','query','multi-query']}
     dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.batchsize,
-                                             shuffle=False, num_workers=16) for x in ['gallery','query','multi-query']}
+                                             shuffle=False, num_workers=8) for x in ['gallery','query','multi-query']}
 else:
     # image_datasets = {x: datasets.ImageFolder( os.path.join(data_dir,x) ,data_transforms) for x in ['satview_polish', 'streetview']}
     # dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.batchsize,
@@ -168,7 +173,7 @@ def which_view(name):
         print('unknown view')
     return -1
 
-def extract_feature(model,dataloaders, view_index = 1, dim=512):
+def extract_feature(model,dataloaders, view_index = 1, dim=opt.feature_dim):
     features = torch.FloatTensor()
     count = 0
     for data in dataloaders:

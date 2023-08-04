@@ -141,6 +141,7 @@ def train_model(opt):
         'train_sate' : transforms.Compose(transform_train_list_sate),
         'val': transforms.Compose(transform_val_list)}
 
+
     accelerate.print(f"opt.same_area {opt.same_area}")
     # assert(0)
     image_datasets = TrainDataloader(data_dir, data_transforms['train_street'], data_transforms['train_sate'], opt.same_area)
@@ -227,7 +228,8 @@ def train_model(opt):
     num_training_steps=(len(dataloaders) * num_epochs)
     if opt.optimizer == "SAM" or "AdamW":
         scheduler = WarmupCosineSchedule(optimizer, warmup_steps=0, t_total=num_training_steps)
-        
+
+    opt = AcceleratedOptimizer(opt, keep_methods=['first_step', 'second_step'])    
     
     #scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[80,120,160])
     if opt.optimizer == "SAM" or "AdamW":
@@ -245,7 +247,7 @@ def train_model(opt):
         accelerate.print('-' * 10)
         
 
-        train_one_epoch(accelerate, model, epoch, criterion_class, infonce, 
+        train_one_epoch_SAM(accelerate, model, epoch, criterion_class, infonce, 
                         optimizer, accuracy, dataloaders, scheduler, num_epochs ,opt)
                         
         time_elapsed = time.time() - since
@@ -802,8 +804,7 @@ def train_one_epoch_SAM(accelerate, model, epoch, criterion_class, infonce, opti
         y1_s4_res_logits, y2_s4_res_logits = result['part_logits']
 
 
-        branch4_preds, branch4_loss = one_LPN_output(y1_s4_res_logits, all_label, criterion_class, opt.block)
-        
+        branch4_preds, branch4_loss = one_LPN_output(y1_s4_res_logits, all_label, criterion_class, opt.block)      
         branch4_preds2, branch4_loss2 = one_LPN_output(y2_s4_res_logits, all_label, criterion_class, opt.block)
         loss_branch4 = branch4_loss +  branch4_loss2
         loss_branch4 = loss_branch4 #/ 3.0
@@ -815,12 +816,33 @@ def train_one_epoch_SAM(accelerate, model, epoch, criterion_class, infonce, opti
         #     print(f"loss {loss.item() }")
         #     print(f"loss_branch4 {loss_branch4.item() }")
         #     print(f"loss_global {loss_global.item() }")
-
         accelerate.backward(loss)
-        optimizer.step()
+        #optimizer.step()
 
-        if opt.optimizer == "SAM" or "AdamW":
-            scheduler.step()
+        optimizer.first_step(zero_grad=True)
+
+        result = model(sate_data, street_data, epoch)
+        y1_s4_logits_2, y2_s4_logits_2 = result['global_logits']
+        loss_global_2 = criterion_class(y1_s4_logits_2, all_label) + criterion_class(y2_s4_logits_2, all_label)
+        y1_s4_res_logits_2, y2_s4_res_logits_2 = result['part_logits']
+        _, branch4_loss_2 = one_LPN_output(y1_s4_res_logits_2, all_label, criterion_class, opt.block)      
+        _, branch4_loss2_2 = one_LPN_output(y2_s4_res_logits_2, all_label, criterion_class, opt.block)
+
+        sate_embd, street_embd= result['global_embedding']
+        sate_embd_norm = F.normalize(sate_embd, dim=1)
+        street_embd_norm = F.normalize(street_embd, dim=1)
+        features = torch.cat([sate_embd_norm.unsqueeze(1), street_embd_norm.unsqueeze(1)], dim=1)
+        loss_infonce_2 = infonce(features, all_label)
+
+        loss_branch4_2 = branch4_loss_2 +  branch4_loss2_2
+        loss2 = loss_global_2 + loss_branch4_2 + loss_infonce_2
+        accelerate.backward(loss2)
+
+        optimizer.second_step(zero_grad=True)
+
+
+
+        scheduler.step()
 
         accelerate.log({"step loss": loss.item()})
 
@@ -864,11 +886,6 @@ def train_one_epoch_SAM(accelerate, model, epoch, criterion_class, infonce, opti
     accelerate.print(f"Satellite_Acc:{100*epoch_acc_sate:.4f}%    Street_Acc:{100*epoch_acc_street:.4f}%")
     accelerate.print(f"Satellite_LPN_Acc:{100*epoch_lpn_acc_sate:.4f}%    Street_LPN_Acc:{100*epoch_lpn_acc_street:.4f}%")
 
-    if not opt.optimizer == "SAM" or "AdamW":
-        scheduler.step()
-
-    # if (epoch+1) % 20 == 0:
-    #     save_network(model, opt.name, epoch)
 
     if accelerate.is_main_process:  
         if (epoch+1) == num_epochs: 

@@ -8,12 +8,14 @@ from torchvision import transforms
 import time
 import os
 # os.environ['CUDA_LAUNCH_BLOCKING']='1'
-from model import two_view_net_swin_infonce_plpn2
+# os.environ["WANDB_MODE"] = "disabled"
+from model import two_view_net_swin_infonce_plpn2, two_view_net_swin_infonce_region_cluster
 from utils import save_network
 from types import SimpleNamespace
 from timm.optim.optim_factory import create_optimizer
 from torchmetrics import Accuracy
 from wty_new_image_folder import CVACT_Data
+# from cvact_data import TrainDataloader
 from torch.nn import functional as F
 import random
 from PIL import ImageFilter, ImageOps
@@ -72,6 +74,12 @@ def get_args_parser():
                         help='use float16 instead of float32, which will save about 50% memory')
     parser.add_argument('--block', default=6, type=int, help='the num of block')
 
+    parser.add_argument('--feature_dim', default=512, type=int, help='part feature dim')
+    parser.add_argument('--backbone', default="swint", type=str, help='backbone')
+    parser.add_argument('--dataset', default="vigor", type=str, help='dataset')
+    parser.add_argument('--epoch', default=100, type=int, help='epoch number')
+
+
     return parser
 
 
@@ -81,16 +89,9 @@ def get_args_parser():
 def train_model(opt):
 
     accelerate = Accelerator(mixed_precision='fp16', log_with="wandb")
-    #accelerate.init_trackers("UniQT")
+    accelerate.init_trackers("UniQT")
 
-    if accelerate.is_main_process:
-        dir_name = os.path.join('./model', opt.name)
-        if not os.path.isdir(dir_name):
-            os.mkdir(dir_name)
 
-        # save opts
-        with open('%s/opts.yaml' % dir_name, 'w') as fp:
-            yaml.dump(vars(opt), fp, default_flow_style=False)
 
     data_dir = opt.data_dir
 
@@ -147,29 +148,46 @@ def train_model(opt):
         'train_sate' : transforms.Compose(transform_train_list_sate),
         'val': transforms.Compose(transform_val_list)}
 
+        
+
     image_datasets = CVACT_Data(data_dir, data_transforms['train_street'], data_transforms['train_sate'])
 
-    tensor_to_image = transforms.ToPILImage()
-    for data in image_datasets:
-        sate_data, street_data, all_label = data
-        print(street_data.size())
-        image_street_data = invTrans(street_data)
-        image_street_data = tensor_to_image(image_street_data)
-        image_street_data.save('image_street_data.jpg')
-        assert(0)
+
+
+    # tensor_to_image = transforms.ToPILImage()
+    # for data in image_datasets:
+    #     sate_data, street_data, all_label = data
+    #     print(street_data.size())
+    #     image_street_data = invTrans(street_data)
+    #     image_street_data = tensor_to_image(image_street_data)
+    #     image_street_data.save('image_street_data.jpg')
+    #     assert(0)
 
 
     dataloaders = torch.utils.data.DataLoader(image_datasets, batch_size=opt.batchsize,
-                                              shuffle=True, num_workers=9, pin_memory=True, drop_last=True)
+                                              shuffle=True, num_workers=12, pin_memory=True, drop_last=True)
 
-    class_names = image_datasets.classes
-    accelerate.print(f'there are {len(class_names)} IDs')
+
+    accelerate.print(f'there are {len(image_datasets)} IDs')
+    opt.nclasses = len(image_datasets)
+
+    if accelerate.is_main_process:
+        dir_name = os.path.join('./model', opt.name)
+        if not os.path.isdir(dir_name):
+            os.mkdir(dir_name)
+
+        # save opts
+        with open('%s/opts.yaml' % dir_name, 'w') as fp:
+            yaml.dump(vars(opt), fp, default_flow_style=False)
+
 
     # ============ building networks ... ============
-    model = two_view_net_swin_infonce_plpn2(len(class_names), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
-                                      LPN=True, block=opt.block)
+    #model = two_view_net_swin_infonce_plpn2(len(class_names), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
+                                      #LPN=True, block=opt.block)
+    model = two_view_net_swin_infonce_region_cluster(len(image_datasets), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
+                                      LPN=True, block=opt.block, model=opt.backbone, feature_dim=opt.feature_dim, dataset=opt.dataset)
 
-    accuracy = Accuracy(num_classes=len(class_names), task='multiclass').cuda()
+    accuracy = Accuracy(num_classes=len(image_datasets), task='multiclass').cuda()
     
     
     accelerate.print(model)
@@ -177,7 +195,7 @@ def train_model(opt):
     accelerate.print(f'number of params: {n_parameters//1000000} M')
 
     
-    num_epochs = 200
+    num_epochs = opt.epoch
     start_epoch = 0
 
     #============= Loss ===============================
@@ -615,5 +633,5 @@ if __name__ =='__main__':
     #fix_random_seeds(114514)
     parser = get_args_parser()
     opt = parser.parse_args() 
-    opt.nclasses = 35531
+    # opt.nclasses = 35531
     train_model(opt)

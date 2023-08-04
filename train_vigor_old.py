@@ -8,8 +8,8 @@ from torchvision import transforms
 import time
 import os
 # os.environ['CUDA_LAUNCH_BLOCKING']='1'
-# os.environ["WANDB_MODE"] = "disabled"
-from model import two_view_net_swin_infonce_plpn2, two_view_net_swinB_infonce, two_view_net_swin_infonce_region_cluster
+os.environ["WANDB_MODE"] = "disabled"
+from model import two_view_net_swin_infonce_plpn2, two_view_net_swinB_infonce, two_view_net_swin_infonce_region_cluster, swin_infonce_region_cluster_sr
 from utils import save_network
 from types import SimpleNamespace
 from timm.optim.optim_factory import create_optimizer
@@ -70,7 +70,7 @@ def get_args_parser():
     parser.add_argument('--fp16', action='store_true',
                         help='use float16 instead of float32, which will save about 50% memory')
     parser.add_argument('--block', default=6, type=int, help='the num of block')
-    parser.add_argument('--feature_dim', default=512, type=int, help='part feature dim')
+    parser.add_argument('--class_dim', default=512, type=int, help='part feature dim')
     parser.add_argument('--backbone', default="swint", type=str, help='backbone')
     parser.add_argument('--dataset', default="vigor", type=str, help='dataset')
 
@@ -141,6 +141,8 @@ def train_model(opt):
 
     accelerate.print(f"opt.same_area {opt.same_area}")
     # assert(0)
+
+    
     image_datasets = TrainDataloader(data_dir, data_transforms['train_street'], data_transforms['train_sate'], opt.same_area)
 
 
@@ -169,8 +171,8 @@ def train_model(opt):
             yaml.dump(vars(opt), fp, default_flow_style=False)
 
     # ============ building networks ... ============
-    model = two_view_net_swin_infonce_region_cluster(len(image_datasets), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
-                                      LPN=True, block=opt.block, model=opt.backbone, feature_dim=opt.feature_dim, dataset=opt.dataset)
+    model = swin_infonce_region_cluster_sr(len(image_datasets), droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
+                                      LPN=True, block=opt.block, model=opt.backbone, class_dim=opt.class_dim, dataset=opt.dataset)
 
 
     accuracy = Accuracy(num_classes=len(image_datasets), task='multiclass').cuda()
@@ -510,7 +512,7 @@ def train_one_epoch(accelerate, model, epoch, criterion_class, infonce, optimize
         optimizer.zero_grad()
 
         
-        result = model(sate_data, street_data)
+        result = model(sate_data, street_data, epoch)
         y1_s4_logits, y2_s4_logits = result['global_logits']
         _, preds = torch.max(y1_s4_logits.data, 1)
         _, preds2 = torch.max(y2_s4_logits.data, 1)
