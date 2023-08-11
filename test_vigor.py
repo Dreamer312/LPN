@@ -59,7 +59,7 @@ for str_id in str_ids:
     if id >=0:
         gpu_ids.append(id)
 
-opt.feature_dim = config["feature_dim"] 
+opt.class_dim = config["class_dim"] 
 opt.backbone= config["backbone"]
 opt.dataset= config["dataset"]
 
@@ -113,11 +113,11 @@ model, _, epoch = load_network(opt.name, opt)
 
 
 
-# actual_weight = "/home/minghach/Data/CMH/LPN/model/vigor-swint-infonce-UniQT-accelerate-16/epoch_89/pytorch_model.bin"
-# dict_inter = torch.load(actual_weight)
-# msg = model.load_state_dict(dict_inter)
-# print(msg)
-# print(actual_weight)
+actual_weight = "/home/cmh/cmh/projects/LPN/model/vigor-swint-infonce-UniQT-accelerate-24/each_epoch_ema.pth"
+dict_inter = torch.load(actual_weight)
+msg = model.load_state_dict(dict_inter)
+print(msg)
+print(actual_weight)
 
 if opt.LPN:
     print('use LPN')

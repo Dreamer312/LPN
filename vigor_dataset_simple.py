@@ -39,6 +39,8 @@ class TrainDataloader(Dataset):
         self.train_sat_data_size = len(self.train_sat_list)
         print('Train sat loaded, data size:{}'.format(self.train_sat_data_size))
 
+        #print(self.train_sat_index_dict) #[ 'satellite_41.89503156374817_-87.61805957157792.png': 90615, 'satellite_41.89503156374817_-87.61761898218617.png': 90616]
+
      
         self.train_list = []
         self.train_label = []
@@ -54,6 +56,7 @@ class TrainDataloader(Dataset):
                     data = np.array(line.split(' '))
                     label = []
                     for i in [1, 4, 7, 10]:
+                        # print(data[i])
                         label.append(self.train_sat_index_dict[data[i]])
                     label = np.array(label).astype(np.int64)
                     #print(label) #[7179 7269 7180 7270]
@@ -74,10 +77,32 @@ class TrainDataloader(Dataset):
         self.train_delta = np.array(self.train_delta)
         print('Train grd loaded, data_size: {}'.format(self.train_data_size))
 
+        #print(f'idx{idx}') #看看idx能长到几  idx52609
+        #print(f"self.train_list {self.train_list[:10]}") self.train_list ['/home/cmh/cmh/projects/LPN/data/vigor/NewYork/panorama/rTW64elYRVtD5DWJ9kBgnA,40.731011,-73.995289,.jpg',
+        #print(self.train_sat_cover_dict)  # {69566: [52606], 88366: [52608]}    sate序号:street序号
+        #assert(0)
+
         self.train_sat_cover_list = list(self.train_sat_cover_dict.keys())
+        #print(f"self.train_sat_cover_list {self.train_sat_cover_list[:10]}")
+        #self.train_sat_cover_list [7179, 6922, 5584, 6640, 9586, 9625, 17760, 2756, 17388, 7442] 里面装着所以sate的序号
 
     def __getitem__(self, index):
+        #print(f"index {index}") index 0
+        #print(f"len(self.train_sat_cover_list) {len(self.train_sat_cover_list)}") #len(self.train_sat_cover_list) 40007
+        #print(self.train_sat_cover_list[index%len(self.train_sat_cover_list)])  #7179
+        #print(self.train_sat_cover_dict[self.train_sat_cover_list[index%len(self.train_sat_cover_list)]]) [0]
+        # idx = random.choice(self.train_sat_cover_dict[self.train_sat_cover_list[index%len(self.train_sat_cover_list)]])
+        # print(idx)
+
+        # if len(self.train_sat_cover_dict[self.train_sat_cover_list[index%len(self.train_sat_cover_list)]]) > 1:
+        #     print(self.train_sat_cover_list[index%len(self.train_sat_cover_list)]) #这个相当于卫星图序号
+        #     print(self.train_sat_cover_dict[self.train_sat_cover_list[index%len(self.train_sat_cover_list)]])
+        #     assert(0)
+        #assert(0)
+
+        # 有的卫星图是有多个匹配的street，所以这里随机选一个
         idx = random.choice(self.train_sat_cover_dict[self.train_sat_cover_list[index%len(self.train_sat_cover_list)]])
+
         street_image = Image.open(self.train_list[idx])
         sate_image = Image.open(self.train_sat_list[self.train_label[idx][0]]).convert('RGB')
 
@@ -85,13 +110,22 @@ class TrainDataloader(Dataset):
         sate_image = self.sate_transform(sate_image)
 
         label = index  # Assign label based on panorama image index
-        return sate_image, street_image, label
+        return sate_image, street_image, label, idx
 
         
     def __len__(self):
         return len(self.train_sat_cover_list)
 
-
+    def check_overlap(self, id_list, idx):
+        output = True
+        sat_idx = self.train_label[idx]
+        for id in id_list:
+            sat_id = self.train_label[id]
+            for i in sat_id:
+                 if i in sat_idx:
+                    output = False
+                    return output
+        return output
 
 class TestDataloader_grd(Dataset):
     def __init__(self, dir, transforms, same_area):

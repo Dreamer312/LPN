@@ -8,8 +8,8 @@ from torchvision import transforms
 import time
 import os
 # os.environ['CUDA_LAUNCH_BLOCKING']='1'
-# os.environ["WANDB_MODE"] = "disabled"
-from model import two_view_net_swin_infonce_plpn2, two_view_net_swinB_infonce, two_view_net_swin_infonce_region_cluster, swin_infonce_region_cluster_sr
+os.environ["WANDB_MODE"] = "disabled"
+from model import two_view_net_swin_infonce_region_cluster
 from utils import save_network
 from types import SimpleNamespace
 from timm.optim.optim_factory import create_optimizer
@@ -21,8 +21,14 @@ from PIL import ImageFilter, ImageOps
 from random_erasing import RandomErasing
 import yaml
 from tqdm import tqdm
-from accelerate import Accelerator
-from timm import utils
+
+import torch.distributed as dist
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+
+import wandb
+wandb.init("UniQT")
+# from accelerate import Accelerator
 # torch.cuda.empty_cache()
 
 
@@ -32,6 +38,69 @@ version = torch.__version__
 ######################################################################
 # Options
 # --------
+class SAM(torch.optim.Optimizer):
+    def __init__(self, params, base_optimizer, rho=0.05, adaptive=False, **kwargs):
+        assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
+
+        defaults = dict(rho=rho, adaptive=adaptive, **kwargs)
+        super(SAM, self).__init__(params, defaults)
+
+        self.base_optimizer = base_optimizer(self.param_groups, **kwargs)
+        self.param_groups = self.base_optimizer.param_groups
+        self.defaults.update(self.base_optimizer.defaults)
+
+    @torch.no_grad()
+    def first_step(self, zero_grad=False):
+        grad_norm = self._grad_norm()
+        for group in self.param_groups:
+            scale = group["rho"] / (grad_norm + 1e-12)
+
+            for p in group["params"]:
+                if p.grad is None: continue
+                self.state[p]["old_p"] = p.data.clone()
+                e_w = (torch.pow(p, 2) if group["adaptive"] else 1.0) * p.grad * scale.to(p)
+                p.add_(e_w)  # climb to the local maximum "w + e(w)"
+
+        if zero_grad: self.zero_grad()
+
+    @torch.no_grad()
+    def second_step(self, zero_grad=False):
+        for group in self.param_groups:
+            for p in group["params"]:
+                if p.grad is None: continue
+                p.data = self.state[p]["old_p"]  # get back to "w" from "w + e(w)"
+
+        self.base_optimizer.step()  # do the actual "sharpness-aware" update
+
+        if zero_grad: self.zero_grad()
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        assert closure is not None, "Sharpness Aware Minimization requires closure, but it was not provided"
+        closure = torch.enable_grad()(closure)  # the closure should do a full forward-backward pass
+
+        self.first_step(zero_grad=True)
+        closure()
+        self.second_step()
+
+    def _grad_norm(self):
+        shared_device = self.param_groups[0]["params"][0].device  # put everything on the same device, in case of model parallelism
+        norm = torch.norm(
+                    torch.stack([
+                        ((torch.abs(p) if group["adaptive"] else 1.0) * p.grad).norm(p=2).to(shared_device)
+                        for group in self.param_groups for p in group["params"]
+                        if p.grad is not None
+                    ]),
+                    p=2
+               )
+        return norm
+
+    def load_state_dict(self, state_dict):
+        super().load_state_dict(state_dict)
+        self.base_optimizer.param_groups = self.param_groups
+
+
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser(description='Training')
@@ -86,10 +155,15 @@ def get_args_parser():
 
 def train_model(opt):
 
-    accelerate = Accelerator(mixed_precision='fp16', log_with="wandb")
+    # accelerate = Accelerator(mixed_precision='fp16', log_with="wandb")
     
-    accelerate.init_trackers("UniQT")
-
+    # accelerate.init_trackers("UniQT")
+    ddp_rank = int(os.environ['RANK'])
+    dist.init_process_group(backend='nccl')
+    local_rank = int(os.environ['LOCAL_RANK'])
+    device = f'cuda:{local_rank}'
+    torch.cuda.set_device(device)
+    master_process = ddp_rank == 0 #
 
 
     data_dir = opt.data_dir
@@ -134,14 +208,18 @@ def train_model(opt):
     ]
 
 
-    accelerate.print(transform_train_list_street)
-    data_transforms = {
-        'train_street': transforms.Compose(transform_train_list_street),
-        'train_sate' : transforms.Compose(transform_train_list_sate),
-        'val': transforms.Compose(transform_val_list)}
 
-    accelerate.print(f"opt.same_area {opt.same_area}")
+
+    if master_process:
+        print(transform_train_list_street)
+        
+        print(f"opt.same_area {opt.same_area}")
     # assert(0)
+
+    data_transforms = {
+            'train_street': transforms.Compose(transform_train_list_street),
+            'train_sate' : transforms.Compose(transform_train_list_sate),
+            'val': transforms.Compose(transform_val_list)}
 
     
     image_datasets = TrainDataloader(data_dir, data_transforms['train_street'], data_transforms['train_sate'], opt.same_area)
@@ -153,16 +231,18 @@ def train_model(opt):
     #     # print()
     # assert(0)
 
+    sampler = DistributedSampler(image_datasets)
 
-
-    dataloaders = torch.utils.data.DataLoader(image_datasets, batch_size=opt.batchsize,
-                                              shuffle=True, num_workers=12, pin_memory=False, drop_last=True)
+    # shuffle设置为False    让sample去打乱
+    dataloaders = torch.utils.data.DataLoader(image_datasets, sampler=sampler, batch_size=opt.batchsize,
+                                              shuffle=False, num_workers=8, pin_memory=False, drop_last=True)
 
     # class_names = image_datasets.classes
-    accelerate.print(f'there are {len(image_datasets)} IDs')
+    if master_process:
+        print(f'there are {len(image_datasets)} IDs')
     opt.nclasses = len(image_datasets)
 
-    if accelerate.is_main_process:
+    if master_process:
         dir_name = os.path.join('./model', opt.name)
         if not os.path.isdir(dir_name):
             os.mkdir(dir_name)
@@ -179,14 +259,11 @@ def train_model(opt):
     accuracy = Accuracy(num_classes=len(image_datasets), task='multiclass').cuda()
     
     
-    accelerate.print(model)
+    #accelerate.print(model)
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    accelerate.print(f'number of params: {n_parameters//1000000} M')
+    if master_process:
+        print(f'number of params: {n_parameters//1000000} M')
 
-    #if opt.model_ema:
-        # Important to create EMA model after cuda(), DP wrapper, and AMP but before DDP wrapper # NOTE: EMA model does not need to be wrapped by DDP
-    ema_model = utils.ModelEmaV2(model, decay=0.9998, device=None)
-    ema_model.to(accelerate.device)
     
     
     num_epochs = opt.epoch
@@ -200,55 +277,45 @@ def train_model(opt):
     lr_skip_keywords = {"model_1", "model_2", "plpn"} #"model_4"
     wd_skip_keywords = {'absolute_pos_embed', 'relative_position_bias_table', 'norm', "pos_embed"}
 
-    parameters = set_wd_lr_normal(model, wd_skip_keywords, lr_skip_keywords, opt.lr)
-
-    if opt.optimizer == "Adamw":
-        args = SimpleNamespace()
-        args.weight_decay = 0.05
-        args.opt = 'adamw'
-        args.lr = opt.lr
-        args.momentum = 0.9
-        optimizer = create_optimizer(args, parameters)
-    elif opt.optimizer == "SGD":
-        args = SimpleNamespace()
-        args.weight_decay = 5e-4
-        args.opt = 'sgd'
-        args.lr = opt.lr
-        args.momentum = 0.9
-        args.nesterov = True
-        optimizer = create_optimizer(args, parameters)
-
-    # =================FP 16 scaler====================
-    #scaler = torch.cuda.amp.GradScaler()
+    
+    model.to(device)
+    model = DDP(
+        model,
+        device_ids=[local_rank],
+    )
+    parameters = set_wd_lr_normal(model.module, wd_skip_keywords, lr_skip_keywords, opt.lr)
 
     #=================scheduler =======================
+    base_optimizer = torch.optim.SGD
+   
+    optimizer = SAM(parameters, base_optimizer, rho=2.5, lr=opt.lr, momentum=0.9, weight_decay=5e-4)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=80, gamma=0.1)
     
+    
     #scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[80,120,160])
-    resume =False
-    model, criterion_class, infonce, optimizer, dataloaders = accelerate.prepare(model, criterion_class, infonce, optimizer, dataloaders)
-    if resume:
-        accelerate.load_sate("/home/minghach/Data/CMH/LPN/model/vigor-swint-infonce-UniQT-accelerate-16/each_epoch")
+    # resume =False
+    # model, criterion_class, infonce, optimizer, dataloaders = accelerate.prepare(model, criterion_class, infonce, optimizer, dataloaders)
+    # if resume:
+    #     accelerate.load_sate("/home/minghach/Data/CMH/LPN/model/vigor-swint-infonce-UniQT-accelerate-16/each_epoch")
 
     #########################################################
     since = time.time()
     for epoch in range(num_epochs - start_epoch):
         epoch = epoch + start_epoch
-        accelerate.print('=========================================')
-        accelerate.print(f'Epoch {epoch}/{(num_epochs - 1)}')
-        accelerate.print('-' * 10)
+        if master_process:
+            print('=========================================')
+            print(f'Epoch {epoch}/{(num_epochs - 1)}')
+            print('-' * 10)
         
 
-        train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonce, 
+        train_one_epoch_SAM(sampler, device, master_process, model, epoch, criterion_class, infonce, 
                         optimizer, accuracy, dataloaders, scheduler, num_epochs ,opt)
-        
-        utils.distribute_bn(ema_model, 2, True)
                         
         time_elapsed = time.time() - since
-        accelerate.print('Training complete in {:.0f}m {:.0f}s\n'.format(
+        if master_process:
+            print('Training complete in {:.0f}m {:.0f}s\n'.format(
         time_elapsed // 60, time_elapsed % 60))
-    accelerate.end_training()
-
+    dist.destroy_process_group()
 
 
 
@@ -480,7 +547,7 @@ def one_LPN_output(outputs, labels, criterion, block):
     return preds, loss
 
 
-def train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonce, optimizer, accuracy, dataloaders, scheduler, num_epochs, opt):
+def train_one_epoch_SAM(sampler, device, master_process, model, epoch, criterion_class, infonce, optimizer, accuracy, dataloaders, scheduler, num_epochs, opt):
 
     running_loss = 0.0
     running_loss_main = 0.0
@@ -497,7 +564,8 @@ def train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonc
 
 
 
-    for data in (tqdm(dataloaders) if accelerate.is_local_main_process else dataloaders):
+    for data in (tqdm(dataloaders) if master_process else dataloaders):
+        sampler.set_epoch(epoch)
         step_corrects = 0.0
         step_corrects2 = 0.0
         step_corrects3 = 0.0
@@ -507,13 +575,18 @@ def train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonc
         loss_main = 0.0
         
 
-        sate_data, street_data,  all_label, _ = data
+        sate_data, street_data,  all_label = data
+        sate_data = sate_data.to(device)
+        street_data =street_data.to(device)
+        all_label = all_label.to(device)
+
+
         # sate_data = sate_data.cuda(non_blocking=True)
         # street_data = street_data.cuda(non_blocking=True)
         # all_label = all_label.cuda(non_blocking=True)
 
-        # print(all_label)
-        # assert(0)
+        print(all_label)
+        assert(0)
         
         # zero the parameter gradients
         optimizer.zero_grad()
@@ -551,8 +624,7 @@ def train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonc
         y1_s4_res_logits, y2_s4_res_logits = result['part_logits']
 
 
-        branch4_preds, branch4_loss = one_LPN_output(y1_s4_res_logits, all_label, criterion_class, opt.block)
-        
+        branch4_preds, branch4_loss = one_LPN_output(y1_s4_res_logits, all_label, criterion_class, opt.block)      
         branch4_preds2, branch4_loss2 = one_LPN_output(y2_s4_res_logits, all_label, criterion_class, opt.block)
         loss_branch4 = branch4_loss +  branch4_loss2
         loss_branch4 = loss_branch4 #/ 3.0
@@ -565,10 +637,37 @@ def train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonc
         #     print(f"loss_branch4 {loss_branch4.item() }")
         #     print(f"loss_global {loss_global.item() }")
 
-        accelerate.backward(loss)
-        optimizer.step()
-        ema_model.update(model)
-        accelerate.log({"step loss": loss.item()})
+        
+        with model.no_sync():
+            loss.backward()
+        optimizer.first_step(zero_grad=True)
+
+
+        result = model(sate_data, street_data, epoch)
+        y1_s4_logits_2, y2_s4_logits_2 = result['global_logits']
+        loss_global_2 = criterion_class(y1_s4_logits_2, all_label) + criterion_class(y2_s4_logits_2, all_label)
+        y1_s4_res_logits_2, y2_s4_res_logits_2 = result['part_logits']
+        _, branch4_loss_2 = one_LPN_output(y1_s4_res_logits_2, all_label, criterion_class, opt.block)      
+        _, branch4_loss2_2 = one_LPN_output(y2_s4_res_logits_2, all_label, criterion_class, opt.block)
+
+        sate_embd, street_embd= result['global_embedding']
+        sate_embd_norm = F.normalize(sate_embd, dim=1)
+        street_embd_norm = F.normalize(street_embd, dim=1)
+        features = torch.cat([sate_embd_norm.unsqueeze(1), street_embd_norm.unsqueeze(1)], dim=1)
+        loss_infonce_2 = infonce(features, all_label)
+
+        loss_branch4_2 = branch4_loss_2 +  branch4_loss2_2
+        loss2 = loss_global_2 + loss_branch4_2 + loss_infonce_2
+        
+
+        loss2.backward()
+        optimizer.second_step(zero_grad=True)
+
+
+
+        scheduler.step()
+
+        wandb.log({"step loss": loss.item()})
 
         running_loss += loss.item() 
         running_loss_main += loss_main.item() 
@@ -604,46 +703,28 @@ def train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonc
     epoch_loss_global = running_loss_global / one_epoch_step
     
     #wandb.log({"epoch_loss": epoch_loss})
+    if master_process:
+        print(f'Loss: {epoch_loss:.4f}')
+        print(f"epoch_loss_global: {epoch_loss_global:.4f},       epoch_loss_branch4: {epoch_loss_branch4:.4f}     epoch_infonce_sup: {epoch_infonce_loss} ")
+        print(f"Satellite_Acc:{100*epoch_acc_sate:.4f}%    Street_Acc:{100*epoch_acc_street:.4f}%")
+        print(f"Satellite_LPN_Acc:{100*epoch_lpn_acc_sate:.4f}%    Street_LPN_Acc:{100*epoch_lpn_acc_street:.4f}%")
 
-    accelerate.print(f'Loss: {epoch_loss:.4f}')
-    accelerate.print(f"epoch_loss_global: {epoch_loss_global:.4f},       epoch_loss_branch4: {epoch_loss_branch4:.4f}     epoch_infonce_sup: {epoch_infonce_loss} ")
-    accelerate.print(f"Satellite_Acc:{100*epoch_acc_sate:.4f}%    Street_Acc:{100*epoch_acc_street:.4f}%")
-    accelerate.print(f"Satellite_LPN_Acc:{100*epoch_lpn_acc_sate:.4f}%    Street_LPN_Acc:{100*epoch_lpn_acc_street:.4f}%")
 
-    
-    scheduler.step()
-
-    # if (epoch+1) % 20 == 0:
-    #     save_network(model, opt.name, epoch)
-
-    if accelerate.is_main_process:  
+    if master_process:
         if (epoch+1) == num_epochs: 
             unwrp_model = accelerate.unwrap_model(model)        
             save_network(unwrp_model, opt.name, epoch)
         
-        # if (epoch+1) % 10 == 0:
-        #     inter_epoch_path = os.path.join('./model',opt.name, f'epoch_{epoch}')
-        #     if not os.path.isdir(inter_epoch_path):
-        #         os.mkdir(inter_epoch_path)
-        #     accelerate.save_state(inter_epoch_path)
-
-        # if epoch+1 in [80, 85, 90]:
-        #     inter_epoch_path = os.path.join('./model',opt.name, f'epoch_{epoch}')
-        #     if not os.path.isdir(inter_epoch_path):
-        #         os.mkdir(inter_epoch_path)
-        #     accelerate.save_state(inter_epoch_path)
-        #     ema_weight = utils.get_state_dict(ema_model, utils.unwrap_model)
-        #     torch.save(ema_weight, f"{each_epoch_path}_ema")
-
+        if (epoch+1) % 10 == 0:
+            inter_epoch_path = os.path.join('./model',opt.name, f'epoch_{epoch}')
+            if not os.path.isdir(inter_epoch_path):
+                os.mkdir(inter_epoch_path)
+            accelerate.save_state(inter_epoch_path)
         
         each_epoch_path = os.path.join('./model',opt.name,'each_epoch')
         if not os.path.isdir(each_epoch_path):
             os.mkdir(each_epoch_path)
         accelerate.save_state(each_epoch_path)
-        ema_weight = utils.get_state_dict(ema_model, utils.unwrap_model)
-
-        torch.save(ema_weight, f"{each_epoch_path}_ema.pth")
-
         
 
 

@@ -2455,11 +2455,11 @@ class RegionCenter(nn.Module):
     def __init__(self, dim, head_nums=12, num_tokens_out=4):
         super().__init__()
         window_size = int(num_tokens_out ** 0.5)
-        self.cluster = Cluster_sr(dim=dim, out_dim=dim, proposal_w=window_size, proposal_h=window_size,
+        self.cluster = Cluster(dim=dim, out_dim=dim, proposal_w=window_size, proposal_h=window_size,
                                 fold_w=1, fold_h=1, heads=head_nums, head_dim=64, return_center=True)
      
-    def forward(self, x, sr_centers):
-        regions = self.cluster(x, sr_centers)
+    def forward(self, x):
+        regions = self.cluster(x)
         # print(f"regions {regions.size()}")
         # assert(0)
         return regions

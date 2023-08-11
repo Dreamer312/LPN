@@ -115,7 +115,7 @@ def load_network(name, opt):
     #model = two_view_net_swin(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, share_weight = opt.share, VGG16 = opt.use_vgg16, LPN = True, block=opt.block)
     #model = two_view_net_swin_infonce_region_cluster(opt.nclasses, opt.droprate, stride = opt.stride, pool = opt.pool, LPN = True, block=opt.block)
     model = two_view_net_swin_infonce_region_cluster(opt.nclasses, droprate=opt.droprate, stride=opt.stride, pool=opt.pool,
-                                      LPN=True, block=opt.block, model=opt.backbone, feature_dim=opt.feature_dim, dataset=opt.dataset)
+                                      LPN=True, block=opt.block, model=opt.backbone, class_dim=opt.class_dim, dataset=opt.dataset)
 
     # load model
     if isinstance(epoch, int):
