@@ -22,6 +22,7 @@ from random_erasing import RandomErasing
 import yaml
 from tqdm import tqdm
 from accelerate import Accelerator
+from accelerate.utils import set_seed
 from timm import utils
 # torch.cuda.empty_cache()
 
@@ -440,6 +441,7 @@ def set_wd_lr_normal(model, wd_skip_keywords=(), lr_skip_keywords=(), lr=0):
                 others_has_decay.append(param)
                 #print(f"others {name} has weight decay")
 
+
     return [{'params': backbone_has_decay, 'lr': lr * 0.1},
             {'params': backbone_no_decay, 'lr': lr * 0.1, 'weight_decay': 0.},
             {'params': others_has_decay},
@@ -635,7 +637,6 @@ def train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonc
         #     ema_weight = utils.get_state_dict(ema_model, utils.unwrap_model)
         #     torch.save(ema_weight, f"{each_epoch_path}_ema")
 
-        
         each_epoch_path = os.path.join('./model',opt.name,'each_epoch')
         if not os.path.isdir(each_epoch_path):
             os.mkdir(each_epoch_path)
@@ -648,7 +649,7 @@ def train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonc
 
 
 if __name__ =='__main__':
-    # fix_random_seeds(114514)
+    set_seed(41)
     parser = get_args_parser()
     opt = parser.parse_args() 
     train_model(opt)

@@ -112,12 +112,20 @@ dataloaders['street'] = torch.utils.data.DataLoader(image_datasets['street'],
 model, _, epoch = load_network(opt.name, opt)
 
 
+# actual_weight = "/home/cmh/cmh/projects/LPN/model/vigor-swint-infonce-UniQT-accelerate-29/epoch_89/pytorch_model.bin"
+# dict_inter = torch.load(actual_weight)
+# msg = model.load_state_dict(dict_inter)
+# print(msg)
+# print(actual_weight)
 
-actual_weight = "/home/cmh/cmh/projects/LPN/model/vigor-swint-infonce-UniQT-accelerate-24/each_epoch_ema.pth"
-dict_inter = torch.load(actual_weight)
-msg = model.load_state_dict(dict_inter)
-print(msg)
-print(actual_weight)
+
+ema = False
+if ema:
+    actual_weight = "/home/cmh/cmh/projects/LPN/model/vigor-swint-infonce-UniQT-accelerate-30/each_epoch_ema.pth"
+    dict_inter = torch.load(actual_weight)
+    msg = model.load_state_dict(dict_inter)
+    print(msg)
+    print(actual_weight)
 
 if opt.LPN:
     print('use LPN')
@@ -168,7 +176,11 @@ with torch.no_grad():
         sat_features = torch.cat((sat_features,ff.data.cpu()), 0)
     print(sat_features.size())
     sat_global_descriptor = sat_features.cpu().numpy()
-    np.save("./vigor_sat.npy", sat_global_descriptor)
+
+    if ema:
+        np.save("./vigor_sat_ema.npy", sat_global_descriptor)
+    else:
+        np.save(f"./vigor_sat_gpu{gpu_ids[0]}.npy", sat_global_descriptor)
     
     torch.cuda.empty_cache()
 
@@ -194,7 +206,11 @@ with torch.no_grad():
         ff = ff.view(ff.size(0), -1)
         street_features = torch.cat((street_features,ff.data.cpu()), 0)
     grd_global_descriptor = street_features.cpu().numpy()
-    np.save("./vigor_street.npy", grd_global_descriptor)
+
+    if ema:
+        np.save("./vigor_street_ema.npy", grd_global_descriptor)
+    else:
+        np.save(f"./vigor_street_gpu{gpu_ids[0]}.npy", grd_global_descriptor)
         
          
 
@@ -212,8 +228,12 @@ accuracy_hit = 0.0
 data_amount = 0.0
 
 # Load precomputed descriptors
-sat_global_descriptor = np.load("./vigor_sat.npy", allow_pickle=True)
-grd_global_descriptor = np.load("./vigor_street.npy", allow_pickle=True)
+if ema:
+    sat_global_descriptor = np.load("./vigor_sat_ema.npy", allow_pickle=True)
+    grd_global_descriptor = np.load("./vigor_street_ema.npy", allow_pickle=True)
+else:
+    sat_global_descriptor = np.load(f"./vigor_sat_gpu{gpu_ids[0]}.npy", allow_pickle=True)
+    grd_global_descriptor = np.load(f"./vigor_street_gpu{gpu_ids[0]}.npy", allow_pickle=True)
 
 # Compute pairwise cosine distance
 dist_array = 2 - 2 * np.matmul(grd_global_descriptor, sat_global_descriptor.T)
