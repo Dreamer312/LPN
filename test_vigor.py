@@ -63,6 +63,7 @@ opt.class_dim = config["class_dim"]
 opt.backbone= config["backbone"]
 opt.dataset= config["dataset"]
 
+opt.class_dim = config["class_dim"]
 
 # set gpu ids
 if len(gpu_ids)>0:
@@ -119,9 +120,9 @@ model, _, epoch = load_network(opt.name, opt)
 # print(actual_weight)
 
 
-ema = False
+ema = True
 if ema:
-    actual_weight = "/home/cmh/cmh/projects/LPN/model/vigor-swint-infonce-UniQT-accelerate-30/each_epoch_ema.pth"
+    actual_weight = "/home/cmh/cmh/projects/LPN/model/vigor-swint-infonce-UniQT-accelerate-32/each_epoch_ema.pth"
     dict_inter = torch.load(actual_weight)
     msg = model.load_state_dict(dict_inter)
     print(msg)
@@ -150,7 +151,7 @@ def fliplr(img):
 
 
 
-dim=512
+dim=opt.class_dim
 with torch.no_grad():
     sat_features = torch.FloatTensor()
     for step, sat_img in enumerate(tqdm(dataloaders['satellite'])):
@@ -167,7 +168,7 @@ with torch.no_grad():
             sat_input_img = sat_img.cuda()
             sat_result = model(sat_input_img, None) 
             sat_outputs, _ = sat_result['part_logits']
-        ff += sat_outputs
+            ff += sat_outputs
 
         fnorm = torch.norm(ff, p=2, dim=1, keepdim=True) * np.sqrt(opt.block) 
         ff = ff.div(fnorm.expand_as(ff))
@@ -199,7 +200,7 @@ with torch.no_grad():
             street_input_img = street_img.cuda()
             street_result = model(None, street_input_img) 
             _, street_outputs = street_result['part_logits']
-        ff += street_outputs
+            ff += street_outputs
 
         fnorm = torch.norm(ff, p=2, dim=1, keepdim=True) * np.sqrt(opt.block) 
         ff = ff.div(fnorm.expand_as(ff))

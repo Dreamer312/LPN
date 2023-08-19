@@ -884,29 +884,88 @@
 
 
 
-
+# 1024dim
 # ########################################################################
-export CUDA_VISIBLE_DEVICES='1,4' 
-accelerate launch train_vigor_old.py \
- --name='vigor-swint-infonce-UniQT-accelerate-30' \
- --data_dir='/home/cmh/cmh/projects/LPN/data/vigor' \
- --erasing_p=0.3 \
- --block=9 \
- --same_area \
- --h=320 \
- --w=320 \
- --droprate=0.75 \
- --lr=0.04 \
- --optimizer='SGD' \
- --batchsize=16 \
- --class_dim=1024 \
- --backbone="swint" \
- --dataset="vigor" \
- --epoch=100
+# export CUDA_VISIBLE_DEVICES='1,4' 
+# accelerate launch train_vigor_old.py \
+#  --name='vigor-swint-infonce-UniQT-accelerate-30' \
+#  --data_dir='/home/cmh/cmh/projects/LPN/data/vigor' \
+#  --erasing_p=0.3 \
+#  --block=9 \
+#  --same_area \
+#  --h=320 \
+#  --w=320 \
+#  --droprate=0.75 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=16 \
+#  --class_dim=1024 \
+#  --backbone="swint" \
+#  --dataset="vigor" \
+#  --epoch=100
+
+
+#  python test_vigor.py \
+# --name='vigor-swint-infonce-UniQT-accelerate-30' \
+# --test_dir='/home/cmh/cmh/projects/LPN/data/vigor' \
+# --gpu_ids='1' \
+# # # # #########################################################################
+
+
+# 不要全局classifier
+# ########################################################################
+# export CUDA_VISIBLE_DEVICES='1,4' 
+# accelerate launch train_vigor_old.py \
+#  --name='vigor-swint-infonce-UniQT-accelerate-31' \
+#  --data_dir='/home/cmh/cmh/projects/LPN/data/vigor' \
+#  --erasing_p=0.3 \
+#  --block=9 \
+#  --same_area \
+#  --h=320 \
+#  --w=320 \
+#  --droprate=0.75 \
+#  --lr=0.04 \
+#  --optimizer='SGD' \
+#  --batchsize=16 \
+#  --class_dim=512 \
+#  --backbone="swint" \
+#  --dataset="vigor" \
+#  --epoch=100
+
+
+#  python test_vigor.py \
+# --name='vigor-swint-infonce-UniQT-accelerate-31' \
+# --test_dir='/home/cmh/cmh/projects/LPN/data/vigor' \
+# --gpu_ids='1' \
+# # # # #########################################################################
+
+
+
+
+
+# 不要全局classifier        128  无drop    40
+# ########################################################################
+# export CUDA_VISIBLE_DEVICES='1,4' 
+# accelerate launch train_vigor_old.py \
+#  --name='vigor-swint-infonce-UniQT-accelerate-32' \
+#  --data_dir='/home/cmh/cmh/projects/LPN/data/vigor' \
+#  --erasing_p=0.3 \
+#  --block=9 \
+#  --same_area \
+#  --h=320 \
+#  --w=320 \
+#  --droprate=0. \
+#  --lr=0.02 \
+#  --optimizer='SGD' \
+#  --batchsize=16 \
+#  --class_dim=128 \
+#  --backbone="swint" \
+#  --dataset="vigor" \
+#  --epoch=40
 
 
  python test_vigor.py \
---name='vigor-swint-infonce-UniQT-accelerate-30' \
+--name='vigor-swint-infonce-UniQT-accelerate-32' \
 --test_dir='/home/cmh/cmh/projects/LPN/data/vigor' \
 --gpu_ids='1' \
 # # # # #########################################################################

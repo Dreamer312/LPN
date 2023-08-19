@@ -223,7 +223,7 @@ def train_model(opt):
     #scaler = torch.cuda.amp.GradScaler()
 
     #=================scheduler =======================
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=80, gamma=0.1)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
     
     #scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[80,120,160])
     resume =False
@@ -522,19 +522,21 @@ def train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonc
 
         
         result = model(sate_data, street_data)
-        y1_s4_logits, y2_s4_logits = result['global_logits']
-        _, preds = torch.max(y1_s4_logits.data, 1)
-        _, preds2 = torch.max(y2_s4_logits.data, 1)
+        # y1_s4_logits, y2_s4_logits = result['global_logits']
+        # _, preds = torch.max(y1_s4_logits.data, 1)
+        # _, preds2 = torch.max(y2_s4_logits.data, 1)
+
+
 
         # print(y1_s4_logits.size())
         # print(all_label.size())
 
 
-        loss_global = criterion_class(y1_s4_logits, all_label) + criterion_class(y2_s4_logits, all_label)
+        #loss_global = criterion_class(y1_s4_logits, all_label) + criterion_class(y2_s4_logits, all_label)
 
         # print(f'loss_global')
         # assert(0)
-        loss_main = loss_main + loss_global
+        #loss_main = loss_main + loss_global
         #loss_main = torch.tensor([0.]).cuda()
         
         ################################
@@ -545,6 +547,8 @@ def train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonc
         loss_infonce = infonce(features, all_label)
         loss_main = loss_main + loss_infonce
         ################################
+        # print(y1_s4_logits.equal(sate_embd))
+        # assert(0)
         
         
         
@@ -575,12 +579,12 @@ def train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonc
         running_loss += loss.item() 
         running_loss_main += loss_main.item() 
         running_loss_branch4 += loss_branch4.item()
-        running_loss_global += loss_global.item()
+        #running_loss_global += loss_global.item()
         running_loss_infonce += loss_infonce.item() #torch.tensor([0.]).cuda()#
         
 
-        step_corrects = accuracy(preds, all_label)      
-        step_corrects2 = accuracy(preds2, all_label)
+        #step_corrects = accuracy(preds, all_label)      
+        #step_corrects2 = accuracy(preds2, all_label)
         step_lpn_corrects = accuracy(branch4_preds, all_label)  
         step_lpn_corrects2 = accuracy(branch4_preds2, all_label)
         
@@ -641,15 +645,15 @@ def train_one_epoch(accelerate, model, ema_model, epoch, criterion_class, infonc
         if not os.path.isdir(each_epoch_path):
             os.mkdir(each_epoch_path)
         accelerate.save_state(each_epoch_path)
-        ema_weight = utils.get_state_dict(ema_model, utils.unwrap_model)
 
+        ema_weight = utils.get_state_dict(ema_model, utils.unwrap_model)
         torch.save(ema_weight, f"{each_epoch_path}_ema.pth")
 
         
 
 
 if __name__ =='__main__':
-    set_seed(41)
+    set_seed(42)
     parser = get_args_parser()
     opt = parser.parse_args() 
     train_model(opt)

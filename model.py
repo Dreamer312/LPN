@@ -37,7 +37,7 @@ def fix_relu(m):
 # Defines the new fc layer and classification layer
 # |--Linear--|--bn--|--relu--|--Linear--|
 class ClassBlock(nn.Module):
-    def __init__(self, input_dim, class_num, droprate, relu=False, bnorm=True, num_bottleneck=512, linear=True, return_f = False):
+    def __init__(self, input_dim, class_num, droprate, relu=False, bnorm=True, num_bottleneck=512, linear=True, return_f = False, classifier=False):
         super(ClassBlock, self).__init__()
         self.return_f = return_f
         add_block = []
@@ -54,10 +54,13 @@ class ClassBlock(nn.Module):
         add_block = nn.Sequential(*add_block)
         add_block.apply(weights_init_kaiming)
 
-        classifier = []
-        classifier += [nn.Linear(num_bottleneck, class_num)]
-        classifier = nn.Sequential(*classifier)
-        classifier.apply(weights_init_classifier)
+        if classifier:
+            classifier = []
+            classifier += [nn.Linear(num_bottleneck, class_num)]
+            classifier = nn.Sequential(*classifier)
+            classifier.apply(weights_init_classifier)
+        else:
+            classifier = nn.Identity()
 
         self.add_block = add_block
         self.classifier = classifier
@@ -2762,7 +2765,7 @@ class two_view_net_swin_infonce_region_cluster(nn.Module):
             
         for i in range(self.block):
             name = 'classifier'+str(i)
-            setattr(self, name, ClassBlock(self.feature_dim, class_num, droprate, num_bottleneck=class_dim))
+            setattr(self, name, ClassBlock(self.feature_dim, class_num, droprate, num_bottleneck=class_dim, classifier=True))
                         
 
     def forward(self, x1, x2, epoch=None):
